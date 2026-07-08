@@ -165,14 +165,15 @@ function baseFields(actorCode: string, actorName: string): Pick<RequestBase, 'id
 }
 
 async function submitRequest(request: OpmRequest): Promise<void> {
-  requests.value = { ...requests.value, [request.id]: request }
+  const plainRequest = toPlainRequest(request)
+  requests.value = { ...requests.value, [plainRequest.id]: plainRequest }
   if (!OBR.isAvailable) {
     lastMessage.value = '本地模式：请求已保存到本地请求箱。'
     return
   }
 
   await writeRequests(requests.value)
-  await OBR.broadcast.sendMessage(REQUEST_CHANNEL, request, { destination: 'REMOTE' })
+  await OBR.broadcast.sendMessage(REQUEST_CHANNEL, plainRequest, { destination: 'REMOTE' })
   await OBR.notification.show('已提交给 DM。', 'SUCCESS')
   lastMessage.value = '已提交给 DM。'
 }
@@ -180,7 +181,7 @@ async function submitRequest(request: OpmRequest): Promise<void> {
 async function setRequestStatus(id: string, status: RequestStatus): Promise<void> {
   const current = requests.value[id]
   if (!current) return
-  const updated = { ...current, status, updatedAt: Date.now() } as OpmRequest
+  const updated = toPlainRequest({ ...current, status, updatedAt: Date.now() } as OpmRequest)
   requests.value = { ...requests.value, [id]: updated }
   await writeRequests(requests.value)
   if (OBR.isAvailable) {
@@ -190,7 +191,7 @@ async function setRequestStatus(id: string, status: RequestStatus): Promise<void
 
 async function writeRequests(next: RequestMap): Promise<void> {
   if (!OBR.isAvailable) return
-  await OBR.room.setMetadata({ [REQUESTS_METADATA_KEY]: next })
+  await OBR.room.setMetadata({ [REQUESTS_METADATA_KEY]: toPlainRequestMap(next) })
 }
 
 function applyMetadata(metadata: Record<string, unknown>): void {
@@ -199,7 +200,7 @@ function applyMetadata(metadata: Record<string, unknown>): void {
   const next: RequestMap = {}
   for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
     const request = normalizeRequest(raw)
-    if (request) next[id] = request
+    if (request) next[id] = toPlainRequest(request)
   }
   requests.value = next
 }
@@ -217,4 +218,16 @@ function normalizeRequest(value: unknown): OpmRequest | null {
 function createRequestId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
   return `req-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function toPlainRequestMap(value: RequestMap): RequestMap {
+  const next: RequestMap = {}
+  for (const [id, request] of Object.entries(value)) {
+    next[id] = toPlainRequest(request)
+  }
+  return next
+}
+
+function toPlainRequest<T extends OpmRequest>(request: T): T {
+  return JSON.parse(JSON.stringify(request)) as T
 }
