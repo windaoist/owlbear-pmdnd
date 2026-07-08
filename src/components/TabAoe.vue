@@ -448,10 +448,6 @@ const logText = computed(() => {
 function applyCost(): void {
   if (!memory.value.attacker) return
   if (currentPPCost.value > 0) memory.value.attacker.takePP(-currentPPCost.value)
-  if (memory.value.attackType == 1) memory.value.costPP = 0
-  else if (memory.value.attackType == 2) memoryHeal.value.costPP = 0
-  else if (memory.value.attackType == 3) memoryStatus.value.costPP = 0
-  else moveMemory.value.nullCostPP = 0
   moveUseCharge()
 }
 

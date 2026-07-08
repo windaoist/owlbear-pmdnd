@@ -424,7 +424,7 @@ export class Move {
     costBonusAction: string = '',
     costReaction: string = '',
     costMove: string = '',
-    costPP: number = 0,
+    costPP: number | string = 0,
     costOther: string = '',
     castRange: string = '',
     duration: string = '',
@@ -451,7 +451,7 @@ export class Move {
     this.costBonusAction = costBonusAction
     this.costReaction = costReaction
     this.costMove = costMove
-    this.costPP = costPP
+    this.costPP = parseNonNegativeNumber(costPP)
     this.costOther = costOther
 
     this.castRange = castRange
@@ -548,7 +548,7 @@ export class Move {
     this.costReaction = String(this.costReaction || '')
     this.costMove = String(this.costMove || '')
     this.costOther = String(this.costOther || '')
-    this.costPP = Math.max(0, Number(this.costPP) || 0)
+    this.costPP = parseNonNegativeNumber(this.costPP)
 
     this.castRange = String(this.castRange || '')
     this.duration = String(this.duration || '')
@@ -566,6 +566,13 @@ export class Move {
 
     this.description = String(this.description || '')
   }
+}
+
+function parseNonNegativeNumber(value: unknown): number {
+  if (typeof value === 'number') return Math.max(0, isFinite(value) ? value : 0)
+  const match = String(value ?? '').match(/-?\d+(?:\.\d+)?/)
+  if (!match) return 0
+  return Math.max(0, Number(match[0]) || 0)
 }
 
 export class Skill {

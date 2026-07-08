@@ -1082,7 +1082,6 @@ export function applyAttackResult(): void {
   navigator.clipboard.writeText(attackMessage())
   battleMemory.value.attacker.takePP(-battleMemory.value.costPP)
   battleMemory.value.defender.takeHP([-damageCalc(), 0])
-  battleMemory.value.costPP = 0
   moveUseCharge()
 }
 
@@ -1091,7 +1090,6 @@ export function applyHealResult(): void {
   navigator.clipboard.writeText(healMessage())
   battleMemory.value.attacker.takePP(-battleMemoryHeal.value.costPP)
   battleMemory.value.defender.takeHP([healCalc(), 0])
-  battleMemoryHeal.value.costPP = 0
   moveUseCharge()
 }
 
@@ -1100,7 +1098,6 @@ export function applyHealShieldResult(): void {
   navigator.clipboard.writeText(healShieldMessage())
   battleMemory.value.attacker.takePP(-battleMemoryHeal.value.costPP)
   battleMemory.value.defender.takeHP([0, healShieldCalc()])
-  battleMemoryHeal.value.costPP = 0
   moveUseCharge()
 }
 
@@ -1111,7 +1108,6 @@ export function applyStatusResult(): void {
     battleMemory.value.attacker.takePP(-battleMemoryStatus.value.costPP)
   }
   battleMemory.value.defender.takeHP([-statusCalc(false), 0])
-  battleMemoryStatus.value.costPP = 0
   moveUseCharge()
 }
 
