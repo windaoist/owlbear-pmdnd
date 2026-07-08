@@ -264,7 +264,7 @@ export function importSaveJson(text: string): void {
 
 export async function saveToRoom(): Promise<void> {
   if (!OBR.isAvailable) throw new Error('当前不在 Owlbear Rodeo 环境中')
-  await OBR.room.setMetadata({ [ROOM_METADATA_KEY]: createSaveData() })
+  await OBR.room.setMetadata({ [ROOM_METADATA_KEY]: exportSaveJson() })
 }
 
 export async function loadFromRoom(): Promise<void> {
@@ -272,5 +272,9 @@ export async function loadFromRoom(): Promise<void> {
   const metadata = await OBR.room.getMetadata()
   const data = metadata[ROOM_METADATA_KEY]
   if (!data) throw new Error('当前房间没有 PMDnD 存档')
-  applySaveData(data as AppSaveData)
+  if (typeof data === 'string') {
+    importSaveJson(data)
+  } else {
+    applySaveData(data as AppSaveData)
+  }
 }
