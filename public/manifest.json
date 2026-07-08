@@ -5,6 +5,7 @@
   "author": "Kate da EoS / windaoist",
   "description": "PMDnD 规则的 Owlbear Rodeo 战斗、状态、角色、检定与先攻助手。",
   "homepage_url": "https://test.iqimi.top/owlbear-pmdnd",
+  "github_url": "https://github.com/windaoist/owlbear-pmdnd",
   "action": {
     "title": "PMDnD 计算器",
     "icon": "/owlbear-pmdnd/icon.svg",
