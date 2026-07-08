@@ -8,6 +8,7 @@ import { StatusManager } from '../model/StatusManager'
 import type { Status } from '../model/DataType'
 
 const RUNTIME_METADATA_KEY = 'owl-pm/runtime'
+const RUNTIME_CHANNEL = 'owl-pm/runtime'
 const SYNC_DEBOUNCE_MS = 600
 
 interface CreatureRuntimeState {
@@ -38,9 +39,13 @@ const syncEnabled = ref(true)
 const lastSyncAt = ref(0)
 const lastAppliedAt = ref(0)
 const lastError = ref('')
+const lastMessage = ref('')
+const appliedCount = ref(0)
+const missingCodes = ref<string[]>([])
 
 let initialized = false
 let unsubscribeMetadata: (() => void) | null = null
+let unsubscribeRuntime: (() => void) | null = null
 let writeTimer: ReturnType<typeof setTimeout> | null = null
 let applyingRemote = false
 
@@ -60,6 +65,10 @@ export function useRuntimeSyncStore() {
 
     unsubscribeMetadata = OBR.room.onMetadataChange((metadata) => {
       applyMetadata(metadata)
+      if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
+    })
+    unsubscribeRuntime = OBR.broadcast.onMessage(RUNTIME_CHANNEL, (event) => {
+      if (!applyRuntimePayload(event.data)) return
       if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
     })
 
@@ -84,7 +93,9 @@ export function useRuntimeSyncStore() {
 
   function destroy(): void {
     unsubscribeMetadata?.()
+    unsubscribeRuntime?.()
     unsubscribeMetadata = null
+    unsubscribeRuntime = null
     initialized = false
     if (writeTimer) clearTimeout(writeTimer)
     writeTimer = null
@@ -107,6 +118,9 @@ export function useRuntimeSyncStore() {
     lastSyncAt,
     lastAppliedAt,
     lastError,
+    lastMessage,
+    appliedCount,
+    missingCodes,
     remoteCount: computed(() => Object.keys(remoteStates.value).length),
     canPush: computed(() => OBR.isAvailable && session.role.value === 'GM'),
     canApply: computed(() => OBR.isAvailable && session.role.value === 'PLAYER'),
@@ -131,9 +145,19 @@ async function writeRuntimeStates(): Promise<void> {
     const { creatures } = useCreatureStore()
     const next = createRuntimeStateMap(creatures.value)
     remoteStates.value = next
-    await OBR.room.setMetadata({ [RUNTIME_METADATA_KEY]: toPlain(next) })
+    const plain = toPlain(next)
+    await OBR.broadcast.sendMessage(RUNTIME_CHANNEL, { states: plain }, { destination: 'REMOTE' })
+    let metadataError = ''
+    try {
+      await OBR.room.setMetadata({ [RUNTIME_METADATA_KEY]: plain })
+    } catch (error) {
+      metadataError = error instanceof Error ? error.message : String(error)
+    }
     lastSyncAt.value = Date.now()
-    lastError.value = ''
+    lastError.value = metadataError
+    lastMessage.value = metadataError
+      ? `已广播 ${Object.keys(next).length} 个角色，但快照写入失败。`
+      : `已推送 ${Object.keys(next).length} 个角色。`
   } catch (error) {
     lastError.value = error instanceof Error ? error.message : String(error)
   }
@@ -175,16 +199,28 @@ function createRuntimeStateMap(creatures: Creature[]): RuntimeStateMap {
 
 function applyRemoteStatesToCreatures(): void {
   const { creatures } = useCreatureStore()
-  if (creatures.value.length === 0) return
+  appliedCount.value = 0
+  missingCodes.value = []
+  if (creatures.value.length === 0) {
+    lastMessage.value = '没有本地角色可应用同步。'
+    return
+  }
   applyingRemote = true
   try {
+    const localCodes = new Set(creatures.value.map((creature) => creature.code()))
+    missingCodes.value = Object.keys(remoteStates.value).filter((code) => !localCodes.has(code))
     for (const creature of creatures.value) {
       const state = remoteStates.value[creature.code()]
       if (!state) continue
       applyRuntimeState(creature, state)
+      appliedCount.value += 1
     }
     lastAppliedAt.value = Date.now()
     lastError.value = ''
+    lastMessage.value =
+      appliedCount.value > 0
+        ? `已应用 ${appliedCount.value} 个角色。`
+        : `没有匹配的角色 code。远端 ${Object.keys(remoteStates.value).length} 个，本地 ${creatures.value.length} 个。`
   } catch (error) {
     lastError.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -215,13 +251,21 @@ function applyRuntimeState(creature: Creature, state: CreatureRuntimeState): voi
 
 function applyMetadata(metadata: Record<string, unknown>): void {
   const raw = metadata[RUNTIME_METADATA_KEY]
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return
+  applyRuntimePayload(raw)
+}
+
+function applyRuntimePayload(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false
+  const rawRecord = raw as Record<string, unknown>
+  const states = rawRecord.states && typeof rawRecord.states === 'object' ? rawRecord.states : raw
+  if (!states || typeof states !== 'object' || Array.isArray(states)) return false
   const next: RuntimeStateMap = {}
-  for (const [code, value] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [code, value] of Object.entries(states as Record<string, unknown>)) {
     const state = normalizeRuntimeState(value)
     if (state) next[code] = state
   }
   remoteStates.value = next
+  return true
 }
 
 function normalizeRuntimeState(value: unknown): CreatureRuntimeState | null {

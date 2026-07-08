@@ -25,6 +25,8 @@ const pendingRequestCount = requestStore.pendingCount
 const remoteRuntimeCount = runtimeSync.remoteCount
 const canPushRuntime = runtimeSync.canPush
 const canApplyRuntime = runtimeSync.canApply
+const runtimeSyncMessage = runtimeSync.lastMessage
+const runtimeSyncError = runtimeSync.lastError
 const appVersion = manifest.version
 const githubUrl = manifest.homepage_url
 
@@ -76,6 +78,8 @@ function handleOpenTab(event: Event): void {
       <span class="toolbar-count">角色：{{ creatures.length }} 人</span>
       <span class="toolbar-count">{{ sessionRole }}</span>
       <span v-if="remoteRuntimeCount > 0" class="toolbar-count">同步：{{ remoteRuntimeCount }} 角色</span>
+      <span v-if="runtimeSyncError" class="toolbar-sync error">{{ runtimeSyncError }}</span>
+      <span v-else-if="runtimeSyncMessage" class="toolbar-sync">{{ runtimeSyncMessage }}</span>
       <button
         v-if="canPushRuntime"
         class="toolbar-request"
@@ -184,6 +188,20 @@ html, body, #app {
   font-size: 12px;
   opacity: 0.85;
   white-space: nowrap;
+}
+
+.toolbar-sync {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+.toolbar-sync.error {
+  color: #ffd6d6;
+  opacity: 1;
 }
 
 .toolbar-spacer {
