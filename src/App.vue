@@ -13,7 +13,7 @@ import manifest from '../public/manifest.json'
 
 const { creatures } = useCreatureStore()
 const appVersion = manifest.version
-const githubUrl = manifest.github_url
+const githubUrl = manifest.homepage_url
 
 const activeTab = ref<string>('battle')
 const isReady = ref(false)
