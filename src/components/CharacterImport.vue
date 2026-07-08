@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import * as xlsx from 'xlsx'
 import { readCardFromXlsx } from '../model/CardReader'
 import { useCreatureStore } from '../stores/creatureStore'
@@ -10,6 +10,16 @@ const importing = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
+let messageTimer: number | null = null
+
+function clearMessageLater(): void {
+  if (messageTimer != null) window.clearTimeout(messageTimer)
+  messageTimer = window.setTimeout(() => {
+    successMsg.value = ''
+    errorMsg.value = ''
+    messageTimer = null
+  }, 4000)
+}
 
 function handleFileChange(event: Event): void {
   const input = event.target as HTMLInputElement
@@ -29,8 +39,10 @@ function handleFileChange(event: Event): void {
       const creature = readCardFromXlsx(workbook)
       addCreature(creature)
       successMsg.value = `✅ 成功导入「${creature.name()}」（${creature.code()}）`
+      clearMessageLater()
     } catch (err) {
       errorMsg.value = `❌ 导入失败：${String(err)}`
+      clearMessageLater()
     } finally {
       importing.value = false
       // 重置 input，允许重复导入同一文件
@@ -40,6 +52,7 @@ function handleFileChange(event: Event): void {
 
   reader.onerror = () => {
     errorMsg.value = '❌ 文件读取失败'
+    clearMessageLater()
     importing.value = false
     if (fileInput.value) fileInput.value.value = ''
   }
@@ -50,6 +63,10 @@ function handleFileChange(event: Event): void {
 function triggerFileInput(): void {
   fileInput.value?.click()
 }
+
+onBeforeUnmount(() => {
+  if (messageTimer != null) window.clearTimeout(messageTimer)
+})
 </script>
 
 <template>
