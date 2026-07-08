@@ -84,6 +84,7 @@ import { checkMemory } from '../stores/checkStore'
 import { useCreatureStore } from '../stores/creatureStore'
 import { useObrSessionStore } from '../stores/obrSessionStore'
 import { useRequestStore } from '../stores/requestStore'
+import type { MoveApplication } from '../stores/requestStore'
 import { toAdvantage, valueToColor } from '../utils'
 import BattleCharacterSidebar from './BattleCharacterSidebar.vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
@@ -232,6 +233,21 @@ function scrollPowerIdx(delta: number): void {
 const currentSelectedPower = computed(() => currentPower())
 const hasMultiplePowers = computed(() => currentMove().powerList.length > 2)
 
+function currentMoveApplication(actionLabel: string, targetCode: string, costPP: number): MoveApplication {
+  let hpDelta: [number, number] = [0, 0]
+  if (actionLabel === '攻击') hpDelta = [-damageResult.value, 0]
+  else if (actionLabel === '治疗') hpDelta = [healResult.value, 0]
+  else if (actionLabel === '护盾') hpDelta = [0, healShieldResult.value]
+  else if (actionLabel === '状态伤害') hpDelta = [-statusDamageResult.value, 0]
+  else if (actionLabel === '状态治疗') hpDelta = [statusHealResult.value, 0]
+  else if (actionLabel === '状态护盾') hpDelta = [0, statusHealResult.value]
+
+  return {
+    ppCost: costPP,
+    targets: [{ code: targetCode, hpDelta }],
+  }
+}
+
 function openSaveCheck(skill: string): void {
   if (!memory.value.defender) return
   checkMemory.value.chosen.clear()
@@ -261,6 +277,7 @@ async function submitCurrentMove(actionLabel: string, text: string, moveName: st
       attackType: memory.value.attackType,
       selectedMove: moveMemory.value.selectedMove,
       selectedPowerIdx: moveMemory.value.selectedPowerIdx,
+      application: currentMoveApplication(actionLabel, defender.code(), costPP),
     },
   })
   window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'requests' }))

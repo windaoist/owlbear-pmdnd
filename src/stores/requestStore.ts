@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import OBR from '@owlbear-rodeo/sdk'
+import { useCreatureStore } from './creatureStore'
 import { useObrSessionStore } from './obrSessionStore'
 
 const REQUESTS_METADATA_KEY = 'owl-pm/requests'
@@ -33,6 +34,16 @@ export interface MoveRequest extends RequestBase {
   payload?: Record<string, unknown>
 }
 
+export interface MoveApplicationTarget {
+  code: string
+  hpDelta: [number, number]
+}
+
+export interface MoveApplication {
+  ppCost: number
+  targets: MoveApplicationTarget[]
+}
+
 export interface RollRequest extends RequestBase {
   kind: 'roll'
   mode: 'dice' | 'check' | 'save'
@@ -54,6 +65,7 @@ let initialized = false
 let unsubscribeMetadata: (() => void) | null = null
 let unsubscribeRequest: (() => void) | null = null
 let unsubscribeResult: (() => void) | null = null
+const appliedApprovedRequestIds = new Set<string>()
 
 export function useRequestStore() {
   const session = useObrSessionStore()
@@ -81,6 +93,9 @@ export function useRequestStore() {
       if (!request) return
       requests.value = { ...requests.value, [request.id]: request }
       if (request.fromPlayerId === session.playerId.value) {
+        if (request.status === 'approved' && request.kind === 'move') {
+          applyApprovedMoveRequest(request)
+        }
         const label = request.status === 'approved' ? '已批准' : '已拒绝'
         OBR.notification.show(`DM ${label}：${request.actorName}`, request.status === 'approved' ? 'SUCCESS' : 'WARNING')
       }
@@ -116,6 +131,8 @@ export function useRequestStore() {
   }
 
   async function approveRequest(id: string): Promise<void> {
+    const current = requests.value[id]
+    if (current?.kind === 'move' && current.status === 'pending' && !applyApprovedMoveRequest(current)) return
     await setRequestStatus(id, 'approved')
   }
 
@@ -213,6 +230,55 @@ function normalizeRequest(value: unknown): OpmRequest | null {
   if (request.status !== 'pending' && request.status !== 'approved' && request.status !== 'rejected') return null
   if (typeof request.text !== 'string') return null
   return request as OpmRequest
+}
+
+function applyApprovedMoveRequest(request: MoveRequest): boolean {
+  if (appliedApprovedRequestIds.has(request.id)) return true
+  const application = normalizeMoveApplication(request.payload?.application)
+  if (!application) return true
+
+  const { findByCode } = useCreatureStore()
+  const actor = findByCode(request.actorCode)
+  const targets = application.targets.map((target) => ({
+    target,
+    creature: findByCode(target.code),
+  }))
+  const missing = targets.find((entry) => entry.creature == null)
+  if (!actor) {
+    lastMessage.value = `无法应用请求：找不到角色 ${request.actorName}（${request.actorCode}）。`
+    return false
+  }
+  if (missing) {
+    lastMessage.value = `无法应用请求：找不到目标 ${missing.target.code}。`
+    return false
+  }
+
+  if (application.ppCost > 0) actor.takePP(-application.ppCost)
+  for (const { target, creature } of targets) {
+    creature!.takeHP(target.hpDelta)
+  }
+  appliedApprovedRequestIds.add(request.id)
+  lastMessage.value = `已应用 ${request.actorName} 的${request.moveName}。`
+  return true
+}
+
+function normalizeMoveApplication(value: unknown): MoveApplication | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const raw = value as Partial<MoveApplication>
+  const ppCost = Math.max(0, Math.floor(Number(raw.ppCost) || 0))
+  if (!Array.isArray(raw.targets)) return null
+
+  const targets: MoveApplicationTarget[] = []
+  for (const item of raw.targets) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+    const target = item as Partial<MoveApplicationTarget>
+    if (typeof target.code !== 'string') return null
+    if (!Array.isArray(target.hpDelta) || target.hpDelta.length < 2) return null
+    const real = Math.floor(Number(target.hpDelta[0]) || 0)
+    const temp = Math.floor(Number(target.hpDelta[1]) || 0)
+    targets.push({ code: target.code, hpDelta: [real, temp] })
+  }
+  return { ppCost, targets }
 }
 
 function createRequestId(): string {

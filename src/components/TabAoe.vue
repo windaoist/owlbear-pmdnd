@@ -28,6 +28,7 @@ import { checkMemory } from '../stores/checkStore'
 import { useCreatureStore } from '../stores/creatureStore'
 import { useObrSessionStore } from '../stores/obrSessionStore'
 import { useRequestStore } from '../stores/requestStore'
+import type { MoveApplication } from '../stores/requestStore'
 import { d20, toMod, valueToColor } from '../utils'
 
 interface TargetEntry {
@@ -382,6 +383,25 @@ function resultValue(result: AttackResult | HealResult | StatusResult): number {
   return 0
 }
 
+function resultHpDelta(result: AttackResult | HealResult | StatusResult): [number, number] {
+  const value = resultValue(result)
+  if (memory.value.attackType == 2) return healMode.value == 'heal' ? [value, 0] : [0, value]
+  if (memory.value.attackType == 3 && statusMode.value != 'damage') {
+    return statusMode.value == 'heal' ? [value, 0] : [0, value]
+  }
+  return [-value, 0]
+}
+
+function currentMoveApplication(): MoveApplication {
+  return {
+    ppCost: currentPPCost.value,
+    targets: activeResults.value.map((result) => ({
+      code: result.creature.code(),
+      hpDelta: resultHpDelta(result),
+    })),
+  }
+}
+
 function diceLines(entry: TargetEntry, bonus: number, flags = baseMemory()): string {
   const casterName = memory.value.attacker?.name() ?? '效果'
   return entry.rollHistory
@@ -437,14 +457,7 @@ function applyCost(): void {
 
 function applyAll(): void {
   for (const result of activeResults.value) {
-    const value = resultValue(result)
-    if (memory.value.attackType == 2) {
-      result.creature.takeHP(healMode.value == 'heal' ? [value, 0] : [0, value])
-    } else if (memory.value.attackType == 3 && statusMode.value != 'damage') {
-      result.creature.takeHP(statusMode.value == 'heal' ? [value, 0] : [0, value])
-    } else {
-      result.creature.takeHP([-value, 0])
-    }
+    result.creature.takeHP(resultHpDelta(result))
   }
   navigator.clipboard.writeText(logText.value)
   applyCost()
@@ -470,6 +483,7 @@ async function submitAoeRequest(): Promise<void> {
       attackType: memory.value.attackType,
       selectedMove: moveMemory.value.selectedMove,
       selectedPowerIdx: moveMemory.value.selectedPowerIdx,
+      application: currentMoveApplication(),
     },
   })
   window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'requests' }))
