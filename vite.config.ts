@@ -11,9 +11,4 @@ export default defineConfig({
       '@renderer': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  server: {
-    cors: {
-      origin: "https://www.owlbear.rodeo",
-    },
-  },
 })

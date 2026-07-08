@@ -1,4 +1,3 @@
-import OBR from '@owlbear-rodeo/sdk'
 import {
   Ability,
   Attribute,
@@ -24,9 +23,6 @@ import { checkMemory, CheckMemory } from './checkStore'
 import { initiativeMemory, InitiativeMemory } from './initiativeStore'
 import { useCreatureStore } from './creatureStore'
 
-const ROOM_METADATA_KEY = 'top.iqimi.owl-pm/state'
-const ROOM_METADATA_CHUNK_PREFIX = 'top.iqimi.owl-pm/state/chunk/'
-const ROOM_METADATA_CHUNK_SIZE = 10_000
 const SAVE_VERSION = 1
 
 interface BattleMemorySave extends Omit<BattleMemory, 'attacker' | 'defender'> {
@@ -262,50 +258,4 @@ export function applySaveData(data: AppSaveData): void {
 
 export function importSaveJson(text: string): void {
   applySaveData(parseSaveJson(text))
-}
-
-export async function saveToRoom(): Promise<void> {
-  if (!OBR.isAvailable) throw new Error('当前不在 Owlbear Rodeo 环境中')
-  const json = exportSaveJson()
-  const chunkCount = Math.ceil(json.length / ROOM_METADATA_CHUNK_SIZE)
-  for (let i = 0; i < chunkCount; i++) {
-    await OBR.room.setMetadata({
-      [`${ROOM_METADATA_CHUNK_PREFIX}${i}`]: json.slice(
-        i * ROOM_METADATA_CHUNK_SIZE,
-        (i + 1) * ROOM_METADATA_CHUNK_SIZE
-      ),
-    })
-  }
-  await OBR.room.setMetadata({
-    [ROOM_METADATA_KEY]: {
-      version: SAVE_VERSION,
-      savedAt: new Date().toISOString(),
-      chunkCount,
-    },
-  })
-}
-
-export async function loadFromRoom(): Promise<void> {
-  if (!OBR.isAvailable) throw new Error('当前不在 Owlbear Rodeo 环境中')
-  const metadata = await OBR.room.getMetadata()
-  const data = metadata[ROOM_METADATA_KEY]
-  if (!data) throw new Error('当前房间没有 PMDnD 存档')
-  if (typeof data === 'string') {
-    importSaveJson(data)
-  } else if (
-    typeof data === 'object' &&
-    data != null &&
-    'chunkCount' in data &&
-    typeof data.chunkCount === 'number'
-  ) {
-    const chunks: string[] = []
-    for (let i = 0; i < data.chunkCount; i++) {
-      const chunk = metadata[`${ROOM_METADATA_CHUNK_PREFIX}${i}`]
-      if (typeof chunk !== 'string') throw new Error(`房间存档缺少分片 ${i + 1}/${data.chunkCount}`)
-      chunks.push(chunk)
-    }
-    importSaveJson(chunks.join(''))
-  } else {
-    applySaveData(data as AppSaveData)
-  }
 }

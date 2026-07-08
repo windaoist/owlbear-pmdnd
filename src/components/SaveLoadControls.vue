@@ -3,12 +3,9 @@ import { ref } from 'vue'
 import {
   exportSaveJson,
   importSaveJson,
-  loadFromRoom,
-  saveToRoom,
 } from '../stores/persistenceStore'
 
 const fileInput = ref<HTMLInputElement | null>(null)
-const busy = ref(false)
 const message = ref('')
 let timer: ReturnType<typeof setTimeout> | null = null
 
@@ -18,18 +15,6 @@ function showMessage(text: string): void {
   timer = setTimeout(() => {
     message.value = ''
   }, 3500)
-}
-
-async function run(action: () => Promise<void>, ok: string): Promise<void> {
-  busy.value = true
-  try {
-    await action()
-    showMessage(ok)
-  } catch (error) {
-    showMessage(error instanceof Error ? error.message : String(error))
-  } finally {
-    busy.value = false
-  }
 }
 
 function downloadJson(): void {
@@ -68,14 +53,8 @@ function importFile(event: Event): void {
 
 <template>
   <div class="save-load">
-    <button class="save-btn" :disabled="busy" title="保存到当前 Owlbear 房间 metadata" @click="run(saveToRoom, '已保存到当前房间')">
-      房间保存
-    </button>
-    <button class="save-btn" :disabled="busy" title="从当前 Owlbear 房间 metadata 读取" @click="run(loadFromRoom, '已从当前房间读取')">
-      房间读取
-    </button>
-    <button class="save-btn" :disabled="busy" @click="downloadJson">导出</button>
-    <button class="save-btn" :disabled="busy" @click="triggerImport">导入</button>
+    <button class="save-btn" @click="downloadJson">导出</button>
+    <button class="save-btn" @click="triggerImport">导入</button>
     <input ref="fileInput" type="file" accept="application/json,.json" class="hidden-input" @change="importFile" />
     <span v-if="message" class="save-message">{{ message }}</span>
   </div>
