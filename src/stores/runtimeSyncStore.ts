@@ -2,8 +2,10 @@ import { computed, ref, watch } from 'vue'
 import OBR from '@owlbear-rodeo/sdk'
 import type { Creature } from '../model/Creature'
 import { useCreatureStore } from './creatureStore'
-import { reviveStatusManager } from './persistenceStore'
 import { useObrSessionStore } from './obrSessionStore'
+import { S_Null, getStatus } from '../model/Status'
+import { StatusManager } from '../model/StatusManager'
+import type { Status } from '../model/DataType'
 
 const RUNTIME_METADATA_KEY = 'owl-pm/runtime'
 const SYNC_DEBOUNCE_MS = 600
@@ -15,24 +17,21 @@ interface CreatureRuntimeState {
   tempHP: number
   currentPP: number
   inRound: boolean
-  status: unknown
-  adjustments: {
-    abilityBaseD: unknown
-    abilitySaveD: unknown
-    attributeDChange: unknown
-    attributeChange: unknown
-    attributeChangeBase: unknown
-    battleAbilityDChange: unknown
-    skillDChange: unknown
-    skillAdvance: unknown
-    typeChange: unknown
-    typeMdfChange: unknown
-  }
+  status: CompactStatus[]
+  adjustments: Record<string, CompactObject>
   updatedAt: number
   updatedBy: string
 }
 
 type RuntimeStateMap = Record<string, CreatureRuntimeState>
+type CompactObject = Record<string, number> | { value: Array<[number, number]> }
+
+interface CompactStatus {
+  name: string
+  stack: number
+  type?: boolean
+  lossOnTurn?: number
+}
 
 const remoteStates = ref<RuntimeStateMap>({})
 const syncEnabled = ref(true)
@@ -154,18 +153,18 @@ function createRuntimeStateMap(creatures: Creature[]): RuntimeStateMap {
       tempHP: creature.tempHP,
       currentPP: creature.currentPP,
       inRound: creature.inRound,
-      status: toPlain(creature.status),
+      status: compactStatuses(creature),
       adjustments: {
-        abilityBaseD: toPlain(creature.abilityBaseD),
-        abilitySaveD: toPlain(creature.abilitySaveD),
-        attributeDChange: toPlain(creature.attributeDChange),
-        attributeChange: toPlain(creature.attributeChange),
-        attributeChangeBase: toPlain(creature.attributeChangeBase),
-        battleAbilityDChange: toPlain(creature.battleAbilityDChange),
-        skillDChange: toPlain(creature.skillDChange),
-        skillAdvance: toPlain(creature.skillAdvance),
-        typeChange: toPlain(creature.typeChange),
-        typeMdfChange: toPlain(creature.typeMdfChange),
+        abilityBaseD: compactObject(creature.abilityBaseD),
+        abilitySaveD: compactObject(creature.abilitySaveD),
+        attributeDChange: compactObject(creature.attributeDChange),
+        attributeChange: compactObject(creature.attributeChange),
+        attributeChangeBase: compactObject(creature.attributeChangeBase),
+        battleAbilityDChange: compactObject(creature.battleAbilityDChange),
+        skillDChange: compactObject(creature.skillDChange),
+        skillAdvance: compactObject(creature.skillAdvance),
+        typeChange: compactObject(creature.typeChange),
+        typeMdfChange: compactObject(creature.typeMdfChange),
       },
       updatedAt: now,
       updatedBy: session.playerId.value,
@@ -198,18 +197,18 @@ function applyRuntimeState(creature: Creature, state: CreatureRuntimeState): voi
   creature.tempHP = Math.max(0, numberOr(creature.tempHP, state.tempHP))
   creature.currentPP = numberOr(creature.currentPP, state.currentPP)
   creature.inRound = Boolean(state.inRound)
-  creature.status = reviveStatusManager(state.status)
+  creature.status = new StatusManager(reviveCompactStatuses(state.status))
 
-  assignPlain(creature.abilityBaseD, state.adjustments?.abilityBaseD)
-  assignPlain(creature.abilitySaveD, state.adjustments?.abilitySaveD)
-  assignPlain(creature.attributeDChange, state.adjustments?.attributeDChange)
-  assignPlain(creature.attributeChange, state.adjustments?.attributeChange)
-  assignPlain(creature.attributeChangeBase, state.adjustments?.attributeChangeBase)
-  assignPlain(creature.battleAbilityDChange, state.adjustments?.battleAbilityDChange)
-  assignPlain(creature.skillDChange, state.adjustments?.skillDChange)
-  assignPlain(creature.skillAdvance, state.adjustments?.skillAdvance)
-  assignPlain(creature.typeChange, state.adjustments?.typeChange)
-  assignPlain(creature.typeMdfChange, state.adjustments?.typeMdfChange)
+  applyCompactObject(creature.abilityBaseD, state.adjustments?.abilityBaseD)
+  applyCompactObject(creature.abilitySaveD, state.adjustments?.abilitySaveD)
+  applyCompactObject(creature.attributeDChange, state.adjustments?.attributeDChange)
+  applyCompactObject(creature.attributeChange, state.adjustments?.attributeChange)
+  applyCompactObject(creature.attributeChangeBase, state.adjustments?.attributeChangeBase)
+  applyCompactObject(creature.battleAbilityDChange, state.adjustments?.battleAbilityDChange)
+  applyCompactObject(creature.skillDChange, state.adjustments?.skillDChange)
+  applyCompactObject(creature.skillAdvance, state.adjustments?.skillAdvance)
+  applyCompactObject(creature.typeChange, state.adjustments?.typeChange)
+  applyCompactObject(creature.typeMdfChange, state.adjustments?.typeMdfChange)
 
   creature.validate()
 }
@@ -237,11 +236,6 @@ function runtimeSignature(creatures: Creature[]): string {
   return JSON.stringify(createRuntimeStateMap(creatures))
 }
 
-function assignPlain(target: object, source: unknown): void {
-  if (!source || typeof source !== 'object' || Array.isArray(source)) return
-  Object.assign(target, toPlain(source))
-}
-
 function numberOr(fallback: number, value: unknown): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
@@ -249,4 +243,74 @@ function numberOr(fallback: number, value: unknown): number {
 
 function toPlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function compactStatuses(creature: Creature): CompactStatus[] {
+  return creature.status.status
+    .filter((status) => status.stack > 0)
+    .map((status) => ({
+      name: status.name,
+      stack: status.stack,
+      type: status.type,
+      lossOnTurn: status.lossOnTurn,
+    }))
+}
+
+function reviveCompactStatuses(statuses: unknown): Status[] {
+  if (!Array.isArray(statuses)) return []
+  const result: Status[] = []
+  for (const entry of statuses) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const compact = entry as Partial<CompactStatus>
+    if (!compact.name || typeof compact.name !== 'string') continue
+    const status = getStatus(compact.name)?.duplicate() ?? S_Null.duplicate()
+    status.name = compact.name
+    status.stack = numberOr(0, compact.stack)
+    status.type = Boolean(compact.type)
+    status.lossOnTurn = numberOr(status.lossOnTurn, compact.lossOnTurn)
+    result.push(status)
+  }
+  return result
+}
+
+function compactObject(source: unknown): CompactObject {
+  const value = toPlain(source) as Record<string, unknown>
+  if (Array.isArray(value.value)) {
+    const entries: Array<[number, number]> = []
+    value.value.forEach((raw, index) => {
+      const n = Number(raw)
+      if (Number.isFinite(n) && n !== 0) entries.push([index, n])
+    })
+    return { value: entries }
+  }
+
+  const result: Record<string, number> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n !== 0) result[key] = n
+  }
+  return result
+}
+
+function applyCompactObject(target: unknown, source: unknown): void {
+  if (!target || typeof target !== 'object' || !source || typeof source !== 'object' || Array.isArray(source)) return
+  const targetRecord = target as Record<string, unknown>
+  for (const [key, value] of Object.entries(targetRecord)) {
+    if (typeof value === 'number') targetRecord[key] = 0
+  }
+
+  const compact = source as CompactObject
+  if ('value' in compact && Array.isArray(compact.value) && Array.isArray(targetRecord.value)) {
+    const targetValue = targetRecord.value as number[]
+    targetRecord.value = targetValue.map(() => 0)
+    const nextValue = targetRecord.value as number[]
+    for (const [index, value] of compact.value) {
+      if (index >= 0 && index < nextValue.length) nextValue[index] = value
+    }
+    return
+  }
+
+  for (const [key, value] of Object.entries(compact)) {
+    if (key in targetRecord && typeof value === 'number') targetRecord[key] = value
+  }
 }
