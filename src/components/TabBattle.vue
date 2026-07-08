@@ -15,6 +15,7 @@ import {
   currentMove,
   currentPower,
   currentDC,
+  preferredPowerIndex,
   setCurrentMove,
   damageCalc,
   healCalc,
@@ -95,6 +96,7 @@ const saveAbilities = ['力量', '敏捷', '体质', '智力', '感知', '魅力
 
 function handleSelectCreature(code: string): void {
   onChangeSelectedCreature(creatures.value, code)
+  if (moveMemory.value.selectedMove) setCurrentMove()
 }
 
 // 滚轮切换下拉选项
@@ -198,8 +200,17 @@ const attackerMoves = computed(() => {
 
 function selectMove(name: string): void {
   moveMemory.value.selectedMove = name
-  moveMemory.value.selectedPowerIdx = 1 // 默认选第一个有威力的段
+  moveMemory.value.selectedPowerIdx = preferredPowerIndex()
   setCurrentMove()
+}
+
+function scrollMove(delta: number): void {
+  if (attackerMoves.value.length <= 0) return
+  const index = attackerMoves.value.indexOf(moveMemory.value.selectedMove)
+  const next = delta < 0
+    ? attackerMoves.value[Math.max(0, index - 1)]
+    : attackerMoves.value[Math.min(attackerMoves.value.length - 1, index + 1)]
+  if (next) selectMove(next)
 }
 
 function scrollPowerIdx(delta: number): void {
@@ -263,12 +274,7 @@ function openSaveCheck(skill: string): void {
               class="sel move-sel"
               :value="moveMemory.selectedMove"
               @change="selectMove(($event.target as HTMLSelectElement).value)"
-              @wheel.prevent="
-                ($event.deltaY < 0
-                  ? (moveMemory.selectedMove = attackerMoves[Math.max(0, attackerMoves.indexOf(moveMemory.selectedMove) - 1)])
-                  : (moveMemory.selectedMove = attackerMoves[Math.min(attackerMoves.length - 1, attackerMoves.indexOf(moveMemory.selectedMove) + 1)]),
-                setCurrentMove())
-              "
+              @wheel.prevent="scrollMove($event.deltaY)"
             >
               <option value="">（手动输入）</option>
               <option v-for="m in attackerMoves" :key="m" :value="m">{{ m }}</option>

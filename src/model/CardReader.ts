@@ -770,7 +770,7 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
 
     const description = movesList[`AA${row}`]?.v ?? ''
 
-    const movepowers: MovePower[] = [new MovePower(0, 0, '治疗', '特殊', '', true, '')]
+    const movepowers: MovePower[] = [new MovePower(0, 0, '无属性', '特殊', '无性相', true, '')]
 
     try {
       if (powerRaw != null && powerRaw !== '') {
@@ -778,13 +778,14 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
           .split(/[+/|]/)
           .map((s) => s.trim())
         let i = 1
-        for (const s of moveparts) {
+        for (const raw of moveparts) {
+          const s = raw.trim()
           const rgx =
-            /([0-9]+) *(无属性|一般|力场|格斗|飞行|毒|酸|地面|岩石|虫|幽灵|钢|火|水|草|电|超能力|冰|龙|恶|妖精|光耀|黯蚀|治疗|护盾)(物理|特殊|)(钝击|挥砍|穿刺|)(状态|)(.*)/
+            /^([0-9]+)\s*(无属性|一般|力场|格斗|飞行|毒|酸|地面|岩石|虫|幽灵|钢|火|水|草|电|超能力|冰|龙|恶|妖精|光耀|黯蚀|治疗|护盾)\s*(物理|特殊)?\s*(钝击|挥砍|穿刺)?\s*(状态)?(.*)$/
           const res = rgx.exec(s)
           if (res) {
             movepowers.push(
-              new MovePower(i, Number(res[1]), res[2], res[3], res[4], res[5] == '状态', res[6])
+              new MovePower(i, Number(res[1]), res[2], res[3] ?? '', res[4] ?? '', res[5] == '状态', res[6] ?? '')
             )
             i += 1
           }

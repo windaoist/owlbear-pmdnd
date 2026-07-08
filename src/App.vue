@@ -8,6 +8,7 @@ import TabCharacters from './components/TabCharacters.vue'
 import TabCheck from './components/TabCheck.vue'
 import TabInitiative from './components/TabInitiative.vue'
 import CharacterImport from './components/CharacterImport.vue'
+import SaveLoadControls from './components/SaveLoadControls.vue'
 import { useCreatureStore } from './stores/creatureStore'
 import manifest from '../public/manifest.json'
 
@@ -55,6 +56,7 @@ function handleOpenTab(event: Event): void {
       <span class="toolbar-title">PMDnD 计算器</span>
       <span class="toolbar-count">角色：{{ creatures.length }} 人</span>
       <CharacterImport />
+      <SaveLoadControls />
       <span class="toolbar-spacer" />
       <span class="toolbar-version">v{{ appVersion }}</span>
       <a class="github-link" :href="githubUrl" target="_blank" rel="noreferrer" title="GitHub">

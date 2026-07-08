@@ -10,6 +10,7 @@ import {
   currentMove,
   currentPower,
   currentDC,
+  preferredPowerIndex,
   setCurrentMove,
   battleLv,
   spellTypeStab,
@@ -164,6 +165,7 @@ function ensureTargets(): void {
     .filter((target) => findByCode(target.code))
     .map((target) => ({ ...defaultTargetEntry(target.code), ...target }))
   ensureDefender()
+  if (moveMemory.value.selectedMove) setCurrentMove()
 }
 
 function toggleTarget(code: string): void {
@@ -178,7 +180,7 @@ function toggleTarget(code: string): void {
 
 function selectMove(name: string): void {
   moveMemory.value.selectedMove = name
-  moveMemory.value.selectedPowerIdx = currentMove().powerList.length > 1 ? 1 : 0
+  moveMemory.value.selectedPowerIdx = preferredPowerIndex()
   ensureDefender()
   setCurrentMove()
   ensureTargets()
@@ -195,6 +197,12 @@ function scrollPowerIdx(delta: number): void {
 
 function setAttackType(type: number): void {
   memory.value.attackType = type
+  const moveName = currentMove().name
+  if (moveName) {
+    if (type == 1) memory.value.spellName = moveName
+    else if (type == 2) memoryHeal.value.spellName = moveName
+    else if (type == 3) memoryStatus.value.spellName = moveName
+  }
   ensureTargets()
 }
 

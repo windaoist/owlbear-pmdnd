@@ -194,11 +194,16 @@ export function moveUseCharge(): void {
 // ═══════════════════════════════════════════════════════════
 
 export function currentPower(): MovePower {
-  return currentMove().powerList[moveMemory.value.selectedPowerIdx] ?? new MovePower(0, 0, '治疗', '特殊', '', true, '')
+  return currentMove().powerList[moveMemory.value.selectedPowerIdx] ?? new MovePower(0, 0, '无属性', '特殊', '无性相', true, '')
 }
 
 export function isNoPower(): boolean {
-  return currentPower().message() == '无威力'
+  return currentPower().power == 0
+}
+
+export function preferredPowerIndex(): number {
+  const index = currentMove().powerList.findIndex((power) => power.power > 0)
+  return index >= 0 ? index : 0
 }
 
 export function currentDC(): number {
@@ -261,6 +266,11 @@ export function setCurrentMove(): void {
   // 无威力 → 纯功能性招式（不切换 attackType，只记录 PP）
   if (isNoPower() || battleMemory.value.defender == null) {
     battleMemory.value.attackType = 0
+    if (mov.name) {
+      battleMemory.value.spellName = mov.name
+      battleMemoryHeal.value.spellName = mov.name
+      battleMemoryStatus.value.spellName = mov.name
+    }
     moveMemory.value.nullCostPP = costPPOverride
     return
   }
@@ -410,6 +420,11 @@ export function removeDefender(): void {
 
 export function toggleAttackType(value: number): void {
   battleMemory.value.attackType = value
+  const moveName = currentMove().name
+  if (!moveName) return
+  if (value == 1) battleMemory.value.spellName = moveName
+  else if (value == 2) battleMemoryHeal.value.spellName = moveName
+  else if (value == 3) battleMemoryStatus.value.spellName = moveName
 }
 
 function toggleDamageDefGeneric(memory: BattleMemory): void {
