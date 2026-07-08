@@ -82,11 +82,15 @@ import {
 } from '../stores/battleStore'
 import { checkMemory } from '../stores/checkStore'
 import { useCreatureStore } from '../stores/creatureStore'
+import { useObrSessionStore } from '../stores/obrSessionStore'
+import { useRequestStore } from '../stores/requestStore'
 import { toAdvantage, valueToColor } from '../utils'
 import BattleCharacterSidebar from './BattleCharacterSidebar.vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 
 const { creatures } = useCreatureStore()
+const session = useObrSessionStore()
+const requestStore = useRequestStore()
 
 const memory = battleMemory
 const memoryHeal = battleMemoryHeal
@@ -191,6 +195,7 @@ const healResult = computed(() => healCalc())
 const healShieldResult = computed(() => healShieldCalc())
 const statusDamageResult = computed(() => statusCalc(false))
 const statusHealResult = computed(() => statusCalc(true))
+const canApplyDirectly = computed(() => !session.isPlayer.value)
 
 // ── 招式选择 ──
 const attackerMoves = computed(() => {
@@ -236,6 +241,29 @@ function openSaveCheck(skill: string): void {
   checkMemory.value.abilityOverride = ''
   checkMemory.value.difficulty = currentDC()
   window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'check' }))
+}
+
+async function submitCurrentMove(actionLabel: string, text: string, moveName: string, costPP: number): Promise<void> {
+  const attacker = memory.value.attacker
+  const defender = memory.value.defender
+  if (!attacker || !defender || !text.trim()) return
+  await requestStore.submitMoveRequest({
+    actorCode: attacker.code(),
+    actorName: attacker.name(),
+    targetCodes: [defender.code()],
+    targetNames: [defender.name()],
+    moveName,
+    actionLabel,
+    costPP,
+    text,
+    payload: {
+      source: 'battle',
+      attackType: memory.value.attackType,
+      selectedMove: moveMemory.value.selectedMove,
+      selectedPowerIdx: moveMemory.value.selectedPowerIdx,
+    },
+  })
+  window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'requests' }))
 }
 </script>
 
@@ -438,7 +466,8 @@ function openSaveCheck(skill: string): void {
         <div class="field" style="font-size:x-large">
           伤害：{{ damageResult }}
           <button class="bar-btn" @click="copyAttackMessageToClipboard">复制</button>
-          <button class="bar-btn btn-primary" @click="applyAttackResult">应用</button>
+          <button class="bar-btn" @click="submitCurrentMove('攻击', attackMessage(), memory.spellName, memory.costPP)">提交给 DM</button>
+          <button v-if="canApplyDirectly" class="bar-btn btn-primary" @click="applyAttackResult">应用</button>
         </div>
         <textarea
           class="log-area"
@@ -533,14 +562,16 @@ function openSaveCheck(skill: string): void {
         <div class="field" style="font-size:x-large">
           治疗：{{ healResult }}
           <button class="bar-btn" @click="copyHealMessageToClipboard">复制</button>
-          <button class="bar-btn btn-primary" @click="applyHealResult">应用</button>
+          <button class="bar-btn" @click="submitCurrentMove('治疗', healMessage(), memoryHeal.spellName, memoryHeal.costPP)">提交给 DM</button>
+          <button v-if="canApplyDirectly" class="bar-btn btn-primary" @click="applyHealResult">应用</button>
         </div>
         <textarea class="log-area" readonly :value="healMessage()" />
 
         <div class="field" style="font-size:x-large">
           护盾：{{ healShieldResult }}
           <button class="bar-btn" @click="copyHealShieldMessageToClipboard">复制</button>
-          <button class="bar-btn btn-danger" @click="applyHealShieldResult">应用</button>
+          <button class="bar-btn" @click="submitCurrentMove('护盾', healShieldMessage(), memoryHeal.spellName, memoryHeal.costPP)">提交给 DM</button>
+          <button v-if="canApplyDirectly" class="bar-btn btn-danger" @click="applyHealShieldResult">应用</button>
         </div>
         <textarea class="log-area" readonly :value="healShieldMessage()" />
       </div>
@@ -619,7 +650,8 @@ function openSaveCheck(skill: string): void {
         <div class="field" style="font-size:x-large">
           状态伤害：{{ statusDamageResult }}
           <button class="bar-btn" @click="copyStatusMessageToClipboard">复制</button>
-          <button class="bar-btn btn-danger" @click="applyStatusResult">应用</button>
+          <button class="bar-btn" @click="submitCurrentMove('状态伤害', statusMessage(), memoryStatus.spellName, memoryStatus.costPP)">提交给 DM</button>
+          <button v-if="canApplyDirectly" class="bar-btn btn-danger" @click="applyStatusResult">应用</button>
         </div>
         <textarea class="log-area" readonly :value="statusMessage()" />
 
@@ -630,14 +662,16 @@ function openSaveCheck(skill: string): void {
         <div class="field" style="font-size:x-large">
           治疗：{{ statusHealResult }}
           <button class="bar-btn" @click="copyHealStatusMessageToClipboard">复制</button>
-          <button class="bar-btn btn-danger" @click="applyHealStatusResult">应用</button>
+          <button class="bar-btn" @click="submitCurrentMove('状态治疗', healStatusMessage(), memoryStatus.spellName, memoryStatus.costPP)">提交给 DM</button>
+          <button v-if="canApplyDirectly" class="bar-btn btn-danger" @click="applyHealStatusResult">应用</button>
         </div>
         <textarea class="log-area" readonly :value="healStatusMessage()" />
 
         <div class="field" style="font-size:x-large">
           护盾：{{ statusHealResult }}
           <button class="bar-btn" @click="copyHealShieldStatusMessageToClipboard">复制</button>
-          <button class="bar-btn btn-danger" @click="applyHealShieldStatusResult">应用</button>
+          <button class="bar-btn" @click="submitCurrentMove('状态护盾', healShieldStatusMessage(), memoryStatus.spellName, memoryStatus.costPP)">提交给 DM</button>
+          <button v-if="canApplyDirectly" class="bar-btn btn-danger" @click="applyHealShieldStatusResult">应用</button>
         </div>
         <textarea class="log-area" readonly :value="healShieldStatusMessage()" />
       </div>

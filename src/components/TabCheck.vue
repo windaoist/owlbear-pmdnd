@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 import { skillCheckListDisplay, skillToModIndex } from '../model/DataType'
 import type { Creature } from '../model/Creature'
 import { useCreatureStore } from '../stores/creatureStore'
 import { checkMemory, type RollMode } from '../stores/checkStore'
+import { useRequestStore } from '../stores/requestStore'
 import { d10, d20, dvalue, toMod } from '../utils'
 
 const { creatures } = useCreatureStore()
+const requestStore = useRequestStore()
 const memory = checkMemory
 const DM_CODE = 'DM'
 const abilityNames = ['力量', '敏捷', '体质', '智力', '感知', '魅力'] as const
+const lastRollText = ref('')
 
 const selectedCodes = computed(() => Array.from(memory.value.chosen))
 const selectedSummary = computed(() =>
@@ -110,6 +113,7 @@ function rollDiceSequence(sequence: string): { total: number; text: string } | n
 
 async function makeCustomDiceroll(): Promise<void> {
   const codes = selectedCodes.value
+  const lines: string[] = []
   if (codes.length === 0) appendLog('没有选定掷骰对象。')
   for (const code of codes) {
     const roll = rollDiceSequence(memory.value.diceSequence)
@@ -117,8 +121,11 @@ async function makeCustomDiceroll(): Promise<void> {
       appendLog('骰子指令为空或无法识别。')
       break
     }
-    appendLog(`${actorLabel(code)}：${roll.text}`)
+    const line = `${actorLabel(code)}：${roll.text}`
+    lines.push(line)
+    appendLog(line)
   }
+  lastRollText.value = lines.join('\n')
   await scrollLogToBottom()
 }
 
@@ -174,6 +181,11 @@ function advantageLabel(advance: number): string {
 
 async function startCheck(): Promise<void> {
   const mode: 'check' | 'save' = memory.value.rollMode === 'save' ? 'save' : 'check'
+  const lines: string[] = []
+  const log = (text: string): void => {
+    lines.push(text)
+    appendLog(text)
+  }
   let rolled = false
   for (const code of selectedCodes.value) {
     if (code === DM_CODE) continue
@@ -183,13 +195,13 @@ async function startCheck(): Promise<void> {
     rolled = true
     const title = currentRollTitle(mode)
     const advance = rollAdvance(cur, mode)
-    if (advance !== 0) appendLog(`${cur.name()}要进行一次${title}，具有${advantageLabel(advance)}。`)
+    if (advance !== 0) log(`${cur.name()}要进行一次${title}，具有${advantageLabel(advance)}。`)
     if (advance >= 99) {
-      appendLog(`${cur.name()}自动通过了本次${title}。`)
+      log(`${cur.name()}自动通过了本次${title}。`)
       continue
     }
     if (advance <= -99) {
-      appendLog(`${cur.name()}本次${title}自动失败。`)
+      log(`${cur.name()}本次${title}自动失败。`)
       continue
     }
     const minRoll = memory.value.useCustomMin ? cur.skillMin.get(memory.value.checkSkill) : 0
@@ -205,21 +217,22 @@ async function startCheck(): Promise<void> {
       finalRoll = advance > 0 ? Math.max(finalRoll, roll) : Math.min(finalRoll, roll)
       if (memory.value.difficulty > 0) {
         const grade = natural === 20 ? '大成功' : natural === 1 ? '大失败' : success ? '成功' : '失败'
-        appendLog(`${cur.name()}${success ? '通过了' : '未能通过'}一次${title}：(${cur.name()}：${title})[${grade}]D20${toMod(prof)}=${roll}/${memory.value.difficulty}`)
+        log(`${cur.name()}${success ? '通过了' : '未能通过'}一次${title}：(${cur.name()}：${title})[${grade}]D20${toMod(prof)}=${roll}/${memory.value.difficulty}`)
       } else {
-        appendLog(`(${cur.name()}：${title})D20${toMod(prof)}=${roll}`)
+        log(`(${cur.name()}：${title})D20${toMod(prof)}=${roll}`)
       }
     }
     if (advance !== 0) {
       if (memory.value.difficulty > 0) {
         const ok = (successCount > 0 && advance > 0) || (successCount >= diceCount && advance < 0)
-        appendLog(`${cur.name()}${ok ? '通过了' : '未能通过'}本次${title}。`)
+        log(`${cur.name()}${ok ? '通过了' : '未能通过'}本次${title}。`)
       } else {
-        appendLog(`最终结果：(${cur.name()}：${title})D20${toMod(prof)}=${finalRoll}`)
+        log(`最终结果：(${cur.name()}：${title})D20${toMod(prof)}=${finalRoll}`)
       }
     }
   }
   if (!rolled) appendLog(memory.value.chosen.has(DM_CODE) ? 'DM 不参与检定或豁免。' : '没有选定角色。')
+  lastRollText.value = lines.join('\n')
   await scrollLogToBottom()
 }
 
@@ -230,6 +243,22 @@ function makeInitiative(): void {
 
 function copyLog(): void {
   navigator.clipboard.writeText(memory.value.logs)
+}
+
+async function submitLastRoll(): Promise<void> {
+  if (!lastRollText.value.trim()) return
+  const firstCode = selectedCodes.value.find((code) => code !== DM_CODE) ?? selectedCodes.value[0] ?? ''
+  const creature = firstCode ? creatureByCode(firstCode) : undefined
+  const mode = memory.value.rollMode
+  await requestStore.submitRollRequest({
+    actorCode: creature?.code() ?? (firstCode || 'roll'),
+    actorName: creature?.name() ?? actorLabel(firstCode || 'roll'),
+    mode,
+    title: mode === 'dice' ? `掷骰 ${memory.value.diceSequence}` : currentRollTitle(mode === 'save' ? 'save' : 'check'),
+    formula: mode === 'dice' ? memory.value.diceSequence : undefined,
+    text: lastRollText.value,
+  })
+  window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'requests' }))
 }
 </script>
 
@@ -251,6 +280,7 @@ function copyLog(): void {
         <div v-if="memory.rollMode === 'dice'" class="dice-controls">
           <input v-model="memory.diceSequence" placeholder="4d6 + 1d20 - 5 + 2p20 - 3n20" />
           <button class="primary" @click="makeCustomDiceroll">掷骰</button>
+          <button :disabled="!lastRollText" @click="submitLastRoll">提交最近结果给 DM</button>
         </div>
         <div v-else class="check-controls">
           <label>DC <VueNumberInput v-model="memory.difficulty" size="small" inline center controls :min="0" :step="1" /></label>
@@ -260,6 +290,7 @@ function copyLog(): void {
           <button :class="{ active: !memory.useCustomAdvance }" @click="memory.useCustomAdvance = 1 - memory.useCustomAdvance">{{ memory.useCustomAdvance ? '启用优劣势' : '禁用优劣势' }}</button>
           <button :class="{ active: !memory.useCustomMin }" @click="memory.useCustomMin = 1 - memory.useCustomMin">{{ memory.useCustomMin ? '启用保底值' : '禁用保底值' }}</button>
           <button class="primary" @click="startCheck">开始{{ checkActionLabel }}</button>
+          <button :disabled="!lastRollText" @click="submitLastRoll">提交最近结果给 DM</button>
         </div>
       </section>
       <section class="card actions">

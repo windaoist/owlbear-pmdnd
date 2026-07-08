@@ -7,12 +7,19 @@ import TabStatus from './components/TabStatus.vue'
 import TabCharacters from './components/TabCharacters.vue'
 import TabCheck from './components/TabCheck.vue'
 import TabInitiative from './components/TabInitiative.vue'
+import RequestInbox from './components/RequestInbox.vue'
 import CharacterImport from './components/CharacterImport.vue'
 import SaveLoadControls from './components/SaveLoadControls.vue'
 import { useCreatureStore } from './stores/creatureStore'
+import { useObrSessionStore } from './stores/obrSessionStore'
+import { useRequestStore } from './stores/requestStore'
 import manifest from '../public/manifest.json'
 
 const { creatures } = useCreatureStore()
+const session = useObrSessionStore()
+const requestStore = useRequestStore()
+const sessionRole = session.role
+const pendingRequestCount = requestStore.pendingCount
 const appVersion = manifest.version
 const githubUrl = manifest.homepage_url
 
@@ -26,16 +33,21 @@ const tabs = [
   { key: 'characters', label: '👥 角色' },
   { key: 'check', label: '🎲 检定' },
   { key: 'initiative', label: '⏱ 先攻' },
+  { key: 'requests', label: '📨 请求' },
 ]
 
 onMounted(async () => {
   window.addEventListener('owl-pm-open-tab', handleOpenTab)
   if (OBR.isAvailable) {
-    OBR.onReady(() => {
+    OBR.onReady(async () => {
+      await session.init()
+      await requestStore.init()
       isReady.value = true
     })
     return
   }
+  await session.init()
+  await requestStore.init()
   isReady.value = true
 })
 
@@ -55,6 +67,14 @@ function handleOpenTab(event: Event): void {
     <header class="toolbar">
       <span class="toolbar-title">PMDnD 计算器</span>
       <span class="toolbar-count">角色：{{ creatures.length }} 人</span>
+      <span class="toolbar-count">{{ sessionRole }}</span>
+      <button
+        v-if="pendingRequestCount > 0"
+        class="toolbar-request"
+        @click="activeTab = 'requests'"
+      >
+        待处理 {{ pendingRequestCount }}
+      </button>
       <CharacterImport />
       <SaveLoadControls />
       <span class="toolbar-spacer" />
@@ -90,6 +110,7 @@ function handleOpenTab(event: Event): void {
       <TabCharacters v-else-if="activeTab === 'characters'" />
       <TabCheck v-else-if="activeTab === 'check'" />
       <TabInitiative v-else-if="activeTab === 'initiative'" />
+      <RequestInbox v-else-if="activeTab === 'requests'" />
     </div>
   </div>
 </template>
@@ -149,6 +170,16 @@ html, body, #app {
   font-size: 12px;
   opacity: 0.9;
   white-space: nowrap;
+}
+
+.toolbar-request {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  padding: 3px 7px;
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .github-link {

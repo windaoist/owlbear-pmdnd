@@ -26,6 +26,8 @@ import {
 } from '../stores/battleStore'
 import { checkMemory } from '../stores/checkStore'
 import { useCreatureStore } from '../stores/creatureStore'
+import { useObrSessionStore } from '../stores/obrSessionStore'
+import { useRequestStore } from '../stores/requestStore'
 import { d20, toMod, valueToColor } from '../utils'
 
 interface TargetEntry {
@@ -72,6 +74,8 @@ interface StatusResult {
 }
 
 const { creatures, findByCode } = useCreatureStore()
+const session = useObrSessionStore()
+const requestStore = useRequestStore()
 
 const memory = battleMemory
 const memoryHeal = battleMemoryHeal
@@ -117,6 +121,7 @@ const activeResults = computed(() => {
   if (memory.value.attackType == 1) return attackResults.value
   return []
 })
+const canApplyDirectly = computed(() => !session.isPlayer.value)
 
 function notNull<T>(value: T | null): value is T {
   return value != null
@@ -449,6 +454,27 @@ function copyLog(): void {
   navigator.clipboard.writeText(logText.value)
 }
 
+async function submitAoeRequest(): Promise<void> {
+  if (!memory.value.attacker || !logText.value.trim()) return
+  await requestStore.submitMoveRequest({
+    actorCode: memory.value.attacker.code(),
+    actorName: memory.value.attacker.name(),
+    targetCodes: selectedTargets.value.map((creature) => creature.code()),
+    targetNames: selectedTargets.value.map((creature) => creature.name()),
+    moveName: currentSpellName.value,
+    actionLabel: 'AOE',
+    costPP: currentPPCost.value,
+    text: logText.value,
+    payload: {
+      source: 'aoe',
+      attackType: memory.value.attackType,
+      selectedMove: moveMemory.value.selectedMove,
+      selectedPowerIdx: moveMemory.value.selectedPowerIdx,
+    },
+  })
+  window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'requests' }))
+}
+
 function openSaveCheck(skill: string): void {
   checkMemory.value.chosen.clear()
   for (const creature of selectedTargets.value) checkMemory.value.chosen.add(creature.code())
@@ -612,7 +638,8 @@ watch(
         <section class="section">
           <div class="field">
             <button class="bar-btn" @click="copyLog">复制</button>
-            <button class="bar-btn btn-danger" :disabled="targets.length == 0" @click="applyAll">应用全部</button>
+            <button class="bar-btn" :disabled="targets.length == 0" @click="submitAoeRequest">提交给 DM</button>
+            <button v-if="canApplyDirectly" class="bar-btn btn-danger" :disabled="targets.length == 0" @click="applyAll">应用全部</button>
           </div>
           <textarea class="log-area" readonly :value="logText" />
         </section>
