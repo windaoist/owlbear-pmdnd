@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import OBR from '@owlbear-rodeo/sdk'
 import TabBattle from './components/TabBattle.vue'
+import TabAoe from './components/TabAoe.vue'
 import TabStatus from './components/TabStatus.vue'
 import TabCharacters from './components/TabCharacters.vue'
 import TabCheck from './components/TabCheck.vue'
@@ -16,6 +17,7 @@ const isReady = ref(false)
 
 const tabs = [
   { key: 'battle', label: '⚔ 战斗' },
+  { key: 'aoe', label: '☄ AOE' },
   { key: 'status', label: '📋 状态' },
   { key: 'characters', label: '👥 角色' },
   { key: 'check', label: '🎲 检定' },
@@ -58,6 +60,7 @@ onMounted(async () => {
     <!-- Tab 内容区 -->
     <div class="tab-content">
       <TabBattle v-if="activeTab === 'battle'" />
+      <TabAoe v-else-if="activeTab === 'aoe'" />
       <TabStatus v-else-if="activeTab === 'status'" />
       <TabCharacters v-else-if="activeTab === 'characters'" />
       <TabCheck v-else-if="activeTab === 'check'" />
