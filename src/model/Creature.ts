@@ -66,6 +66,8 @@ export class Creature {
   currentPP: number
   skillCountType: string
   tempInitiative: number
+  tempCharacterLv: number
+  tempBattleLv: number
 
   currentAction: number
   currentBonusAction: number
@@ -196,6 +198,8 @@ export class Creature {
 
     this.skillCountType = skillCountType
     this.tempInitiative = 1
+    this.tempCharacterLv = 0
+    this.tempBattleLv = 0
 
     this.currentAction = action
     this.currentBonusAction = bonusAction
@@ -243,6 +247,8 @@ export class Creature {
     this.currentLoadCapacity = isFinite(this.currentLoadCapacity) ? this.currentLoadCapacity : 0
 
     this.tempInitiative = Math.max(1, Math.min(10, Math.round(this.tempInitiative) || 1))
+    this.tempCharacterLv = Math.floor(Number(this.tempCharacterLv) || 0)
+    this.tempBattleLv = Math.floor(Number(this.tempBattleLv) || 0)
 
     if (!this.faction || !['玩家', '友方', '中立', '敌方'].includes(this.faction)) {
       this.faction = '敌方'
@@ -347,7 +353,7 @@ export class Creature {
     this.cachedGrandStatus = this.status.grandStatus()
   }
 
-  characterLv(): number {
+  characterLvBase(): number {
     // this.validate()
     let val = 0
     this.races.forEach((v) => {
@@ -356,13 +362,21 @@ export class Creature {
     return Math.floor(val)
   }
 
-  battleLv(): number {
+  characterLv(): number {
+    return Math.max(1, Math.floor(this.characterLvBase() + this.tempCharacterLv))
+  }
+
+  battleLvBase(): number {
     // this.validate()
     let val = 0
     this.races.forEach((v) => {
       val += v.battleLv()
     })
     return Math.floor(val)
+  }
+
+  battleLv(): number {
+    return Math.max(1, Math.floor(this.battleLvBase() + this.tempBattleLv))
   }
 
   battleLvFrom(type: string): number {
@@ -391,6 +405,10 @@ export class Creature {
     this.races.forEach((v) => {
       val += v.getAttribute(index)
     })
+    const battleLvBase = this.battleLvBase()
+    if (battleLvBase > 0 && this.tempBattleLv != 0) {
+      val *= this.battleLv() / battleLvBase
+    }
 
     if (index == 0) {
       // HP

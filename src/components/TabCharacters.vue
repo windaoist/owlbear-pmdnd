@@ -55,6 +55,8 @@ const battleAbilityAdjustRows = [
 const DM_ADJUST_STATUS = 'DM临时调整'
 type AbilityAdvanceField = 'abilityMoveMdf' | 'abilityCheckMdf' | 'abilitySaveMdf'
 type AbilityKey = keyof Pick<Ability, 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha'>
+type AttributeKey = 'hp' | 'patk' | 'pdef' | 'satk' | 'sdef' | 'spd' | 'pp'
+type BattleAbilityKey = 'initiative' | 'acc' | 'eva' | 'pwr'
 
 const current = computed<Creature | null>(() => {
   if (!selectedCode.value && creatures.value.length > 0) selectedCode.value = creatures.value[0].code()
@@ -167,8 +169,63 @@ function setDmAbilityAdvance(c: Creature, field: AbilityAdvanceField, key: Abili
   c.shallowRefresh()
 }
 
+function n(value: unknown): number {
+  return Number(value) || 0
+}
+
+function stepCharacterLv(c: Creature, delta: number): void {
+  c.tempCharacterLv = n(c.tempCharacterLv) + delta
+  refreshCurrent()
+}
+
+function stepBattleLv(c: Creature, delta: number): void {
+  c.tempBattleLv = n(c.tempBattleLv) + delta
+  refreshCurrent()
+}
+
+function stepAbility(c: Creature, key: AbilityKey, delta: number): void {
+  c.abilityBaseD[key] = n(c.abilityBaseD[key]) + delta
+  refreshCurrent()
+}
+
+function stepAbilityAdvance(c: Creature, field: AbilityAdvanceField, key: AbilityKey, delta: number): void {
+  setDmAbilityAdvance(c, field, key, dmAbilityAdvance(c, field, key) + delta)
+}
+
+function stepAttributePercent(c: Creature, key: AttributeKey, delta: number): void {
+  c.attributeDChange[key] = n(c.attributeDChange[key]) + delta
+  refreshCurrent()
+}
+
+function stepAttributeFlat(c: Creature, key: AttributeKey, delta: number): void {
+  c.attributeChange[key] = n(c.attributeChange[key]) + delta
+  refreshCurrent()
+}
+
+function stepBattleAbility(c: Creature, key: BattleAbilityKey, delta: number): void {
+  c.battleAbilityDChange[key] = n(c.battleAbilityDChange[key]) + delta
+  refreshCurrent()
+}
+
+function stepSkillAdvance(c: Creature, index: number, delta: number): void {
+  c.skillAdvance.value[index] = n(c.skillAdvance.value[index]) + delta
+  refreshCurrent()
+}
+
+function stepTypeChange(c: Creature, index: number, delta: number): void {
+  c.typeChange.value[index] = n(c.typeChange.value[index]) + delta
+  refreshCurrent()
+}
+
+function stepTypeMdfChange(c: Creature, index: number, delta: number): void {
+  c.typeMdfChange.value[index] = n(c.typeMdfChange.value[index]) + delta
+  refreshCurrent()
+}
+
 function resetAdjustments(c: Creature): void {
   if (!window.confirm(`清空“${c.name()}”的 DM 临时调整吗？`)) return
+  c.tempCharacterLv = 0
+  c.tempBattleLv = 0
   for (const row of abilityAdjustRows) c.abilityBaseD[row.key] = 0
   for (const row of attributeAdjustRows) {
     c.attributeDChange[row.key] = 0
@@ -229,7 +286,9 @@ function resetAdjustments(c: Creature): void {
           <label>阵营 <select v-model="current.faction"><option>玩家</option><option>友方</option><option>中立</option><option>敌方</option></select></label>
         </div>
         <div class="chip-row">
-          <span>PLV {{ current.characterLv() }}</span><span>CR {{ current.battleLv() }}</span><span>施法 {{ current.castLv() }}</span><span>{{ sizeString(current.sizeAbility.size) }}</span><span>移动 {{ current.sizeAbility.mov }}m</span><span>负重 {{ totalWeight(current).toFixed(2) }}</span>
+          <span>PLV {{ current.characterLv() }}<small v-if="current.tempCharacterLv">（{{ current.characterLvBase() }}{{ toMod(current.tempCharacterLv) }}）</small></span>
+          <span>CR {{ current.battleLv() }}<small v-if="current.tempBattleLv">（{{ current.battleLvBase() }}{{ toMod(current.tempBattleLv) }}）</small></span>
+          <span>施法 {{ current.castLv() }}</span><span>{{ sizeString(current.sizeAbility.size) }}</span><span>移动 {{ current.sizeAbility.mov }}m</span><span>负重 {{ totalWeight(current).toFixed(2) }}</span>
         </div>
         <h3>当前状态</h3>
         <div class="chip-row"><span v-for="s in activeStatuses" :key="s.name">{{ s.name }} {{ s.stack }}</span><span v-if="activeStatuses.length === 0">无</span></div>
@@ -248,88 +307,154 @@ function resetAdjustments(c: Creature): void {
         <div class="adjust-header">
           <div>
             <h3>DM 临时调整</h3>
-            <p class="hint">这里修改的是角色模型上的临时字段，会直接影响战斗、AOE、检定和先攻。</p>
+            <p class="hint">只放临时字段，会直接影响战斗、AOE、检定和先攻。常驻、装备和状态来源在其他页面查看。</p>
           </div>
           <button class="danger" @click="resetAdjustments(current)">清空临时调整</button>
         </div>
 
-        <h3>战斗属性修正</h3>
-        <table>
-          <thead><tr><th>项目</th><th>当前值</th><th>常驻</th><th>装备</th><th>临时%</th><th>状态%</th></tr></thead>
-          <tbody>
-            <tr v-for="row in attributeAdjustRows" :key="row.key">
-              <td>{{ row.label }}</td>
-              <td>{{ current.attribute(row.index) }}</td>
-              <td><input v-model.number="current.attributeDBase[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td><input v-model.number="current.attributeDEquip[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td><input v-model.number="current.attributeDChange[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td :style="{ color: valueToColor(-current.grandStatus().attributeMdf.get(row.index)) }">{{ toMod(current.grandStatus().attributeMdf.get(row.index)) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="adjust-panel level-panel">
+          <div class="adjust-card">
+            <div class="adjust-title">角色等级</div>
+            <div class="adjust-value">{{ current.characterLv() }} <small>基础 {{ current.characterLvBase() }}</small></div>
+            <div class="stepper">
+              <button @click="stepCharacterLv(current, -1)">−</button>
+              <input v-model.number="current.tempCharacterLv" type="number" @change="refreshCurrent" />
+              <button @click="stepCharacterLv(current, 1)">＋</button>
+            </div>
+          </div>
+          <div class="adjust-card">
+            <div class="adjust-title">战斗等级</div>
+            <div class="adjust-value">{{ current.battleLv() }} <small>基础 {{ current.battleLvBase() }}</small></div>
+            <div class="stepper">
+              <button @click="stepBattleLv(current, -1)">−</button>
+              <input v-model.number="current.tempBattleLv" type="number" @change="refreshCurrent" />
+              <button @click="stepBattleLv(current, 1)">＋</button>
+            </div>
+          </div>
+        </div>
 
-        <h3>六维临时修正与优劣势</h3>
-        <table>
-          <thead><tr><th>能力</th><th>当前值</th><th>调整值</th><th>豁免</th><th>临时修正</th><th>攻击优劣势</th><th>检定优劣势</th><th>豁免优劣势</th><th>状态修正</th></tr></thead>
-          <tbody>
-            <tr v-for="row in abilityAdjustRows" :key="row.key">
-              <td>{{ row.label }}</td>
-              <td>{{ current.ability(row.index) }}</td>
-              <td>{{ current.modifier(row.index) }}</td>
-              <td>{{ current.save(row.index) }}</td>
-              <td><input v-model.number="current.abilityBaseD[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td><input class="num-inp" type="number" :value="dmAbilityAdvance(current, 'abilityMoveMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilityMoveMdf', row.key, Number(($event.target as HTMLInputElement).value))" /></td>
-              <td><input class="num-inp" type="number" :value="dmAbilityAdvance(current, 'abilityCheckMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilityCheckMdf', row.key, Number(($event.target as HTMLInputElement).value))" /></td>
-              <td><input class="num-inp" type="number" :value="dmAbilityAdvance(current, 'abilitySaveMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilitySaveMdf', row.key, Number(($event.target as HTMLInputElement).value))" /></td>
-              <td :style="{ color: valueToColor(-current.grandStatus().abilityMdf.get(row.index)) }">{{ toMod(current.grandStatus().abilityMdf.get(row.index)) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <h3>六维与优劣势</h3>
+        <div class="adjust-grid ability-grid">
+          <div v-for="row in abilityAdjustRows" :key="row.key" class="adjust-card">
+            <div class="adjust-title">{{ row.label }}</div>
+            <div class="adjust-value">{{ current.ability(row.index) }} <small>{{ toMod(current.modifier(row.index)) }} / 豁免 {{ toMod(current.save(row.index)) }}</small></div>
+            <label>临时修正</label>
+            <div class="stepper">
+              <button @click="stepAbility(current, row.key, -1)">−</button>
+              <input v-model.number="current.abilityBaseD[row.key]" type="number" @change="refreshCurrent" />
+              <button @click="stepAbility(current, row.key, 1)">＋</button>
+            </div>
+            <div class="mini-grid">
+              <label>攻击</label>
+              <div class="stepper compact">
+                <button @click="stepAbilityAdvance(current, 'abilityMoveMdf', row.key, -1)">−</button>
+                <input type="number" :value="dmAbilityAdvance(current, 'abilityMoveMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilityMoveMdf', row.key, Number(($event.target as HTMLInputElement).value))" />
+                <button @click="stepAbilityAdvance(current, 'abilityMoveMdf', row.key, 1)">＋</button>
+              </div>
+              <label>检定</label>
+              <div class="stepper compact">
+                <button @click="stepAbilityAdvance(current, 'abilityCheckMdf', row.key, -1)">−</button>
+                <input type="number" :value="dmAbilityAdvance(current, 'abilityCheckMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilityCheckMdf', row.key, Number(($event.target as HTMLInputElement).value))" />
+                <button @click="stepAbilityAdvance(current, 'abilityCheckMdf', row.key, 1)">＋</button>
+              </div>
+              <label>豁免</label>
+              <div class="stepper compact">
+                <button @click="stepAbilityAdvance(current, 'abilitySaveMdf', row.key, -1)">−</button>
+                <input type="number" :value="dmAbilityAdvance(current, 'abilitySaveMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilitySaveMdf', row.key, Number(($event.target as HTMLInputElement).value))" />
+                <button @click="stepAbilityAdvance(current, 'abilitySaveMdf', row.key, 1)">＋</button>
+              </div>
+            </div>
+            <small class="muted">状态修正 {{ toMod(current.grandStatus().abilityMdf.get(row.index)) }}</small>
+          </div>
+        </div>
 
-        <h3>战斗能力修正</h3>
-        <table>
-          <thead><tr><th>项目</th><th>当前值</th><th>基础</th><th>装备</th><th>状态栏</th><th>临时</th><th>状态效果</th></tr></thead>
-          <tbody>
-            <tr v-for="row in battleAbilityAdjustRows" :key="row.key">
-              <td>{{ row.label }}</td>
-              <td>{{ current.getBattleAbilityD(row.index) + (row.key === 'initiative' ? current.initiativeRaw() : row.key === 'acc' ? current.accuracyRaw() : row.key === 'eva' ? current.evasionRaw() : current.effectPowerRaw()) }}</td>
-              <td><input v-model.number="current.battleAbilityDBase[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td><input v-model.number="current.battleAbilityDEquip[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td><input v-model.number="current.battleAbilityDState[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td><input v-model.number="current.battleAbilityDChange[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td :style="{ color: valueToColor(-current.grandStatus().battleAbilityMdf.get(row.index)) }">{{ toMod(current.grandStatus().battleAbilityMdf.get(row.index)) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <h3>战斗属性</h3>
+        <div class="adjust-grid attr-grid">
+          <div v-for="row in attributeAdjustRows" :key="row.key" class="adjust-card">
+            <div class="adjust-title">{{ row.label }}</div>
+            <div class="adjust-value">{{ current.attribute(row.index) }} <small>状态 {{ toMod(current.grandStatus().attributeMdf.get(row.index)) }}%</small></div>
+            <label>临时百分比</label>
+            <div class="stepper">
+              <button @click="stepAttributePercent(current, row.key, -5)">−</button>
+              <input v-model.number="current.attributeDChange[row.key]" type="number" @change="refreshCurrent" />
+              <button @click="stepAttributePercent(current, row.key, 5)">＋</button>
+            </div>
+            <label>临时数值</label>
+            <div class="stepper">
+              <button @click="stepAttributeFlat(current, row.key, -1)">−</button>
+              <input v-model.number="current.attributeChange[row.key]" type="number" @change="refreshCurrent" />
+              <button @click="stepAttributeFlat(current, row.key, 1)">＋</button>
+            </div>
+          </div>
+        </div>
+
+        <h3>战斗能力</h3>
+        <div class="adjust-grid battle-grid">
+          <div v-for="row in battleAbilityAdjustRows" :key="row.key" class="adjust-card">
+            <div class="adjust-title">{{ row.label }}</div>
+            <div class="adjust-value">
+              {{ current.getBattleAbilityD(row.index) + (row.key === 'initiative' ? current.initiativeRaw() : row.key === 'acc' ? current.accuracyRaw() : row.key === 'eva' ? current.evasionRaw() : current.effectPowerRaw()) }}
+              <small>状态 {{ toMod(current.grandStatus().battleAbilityMdf.get(row.index)) }}</small>
+            </div>
+            <div class="stepper">
+              <button @click="stepBattleAbility(current, row.key, -1)">−</button>
+              <input v-model.number="current.battleAbilityDChange[row.key]" type="number" @change="refreshCurrent" />
+              <button @click="stepBattleAbility(current, row.key, 1)">＋</button>
+            </div>
+          </div>
+        </div>
 
         <h3>技能检定/豁免优劣势</h3>
-        <table>
-          <thead><tr><th>技能</th><th>检定</th><th>豁免</th><th>DM优劣势</th><th>检定状态</th><th>豁免状态</th></tr></thead>
-          <tbody>
-            <tr v-for="(skill, index) in Skill.nameList" :key="skill">
-              <td>{{ skill }}</td>
-              <td>{{ current.skillMod(skill) }}</td>
-              <td>{{ current.skillSave(skill) }}</td>
-              <td><input v-model.number="current.skillAdvance.value[index]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td :style="{ color: valueToColor(-current.skillCheckAdvanceStatus(skill)) }">{{ toMod(current.skillCheckAdvanceStatus(skill)) }}</td>
-              <td :style="{ color: valueToColor(-current.skillSaveAdvanceStatus(skill)) }">{{ toMod(current.skillSaveAdvanceStatus(skill)) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="compact-table-wrap">
+          <table class="compact-table">
+            <thead><tr><th>技能</th><th>检定</th><th>豁免</th><th>DM优劣势</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr v-for="(skill, index) in Skill.nameList" :key="skill">
+                <td>{{ skill }}</td>
+                <td>{{ toMod(current.skillMod(skill)) }}</td>
+                <td>{{ toMod(current.skillSave(skill)) }}</td>
+                <td>
+                  <div class="stepper compact">
+                    <button @click="stepSkillAdvance(current, index, -1)">−</button>
+                    <input v-model.number="current.skillAdvance.value[index]" type="number" @change="refreshCurrent" />
+                    <button @click="stepSkillAdvance(current, index, 1)">＋</button>
+                  </div>
+                </td>
+                <td>
+                  检 {{ toMod(current.skillCheckAdvanceStatus(skill)) }} / 豁 {{ toMod(current.skillSaveAdvanceStatus(skill)) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-        <h3>属性一致临时修正</h3>
-        <table>
-          <thead><tr><th>属性</th><th>当前属性一致</th><th>DM修正</th><th>当前伤害修正</th><th>DM抗性修正</th></tr></thead>
-          <tbody>
-            <tr v-for="(elem, index) in ElemType.nameList" :key="elem">
-              <td>{{ elem }}</td>
-              <td>{{ current.typeStab(elem) }}</td>
-              <td><input v-model.number="current.typeChange.value[index]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-              <td>{{ current.typeMdf(elem) }}</td>
-              <td><input v-model.number="current.typeMdfChange.value[index]" class="num-inp" type="number" @change="refreshCurrent" /></td>
-            </tr>
-          </tbody>
-        </table>
+        <h3>属性一致与抗性</h3>
+        <div class="compact-table-wrap">
+          <table class="compact-table">
+            <thead><tr><th>属性</th><th>当前一致</th><th>DM一致</th><th>当前抗性</th><th>DM抗性</th></tr></thead>
+            <tbody>
+              <tr v-for="(elem, index) in ElemType.nameList" :key="elem">
+                <td>{{ elem }}</td>
+                <td>{{ toMod(current.typeStab(elem)) }}</td>
+                <td>
+                  <div class="stepper compact">
+                    <button @click="stepTypeChange(current, index, -5)">−</button>
+                    <input v-model.number="current.typeChange.value[index]" type="number" @change="refreshCurrent" />
+                    <button @click="stepTypeChange(current, index, 5)">＋</button>
+                  </div>
+                </td>
+                <td>{{ toMod(current.typeMdf(elem)) }}</td>
+                <td>
+                  <div class="stepper compact">
+                    <button @click="stepTypeMdfChange(current, index, -0.5)">−</button>
+                    <input v-model.number="current.typeMdfChange.value[index]" type="number" step="0.5" @change="refreshCurrent" />
+                    <button @click="stepTypeMdfChange(current, index, 0.5)">＋</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section v-else-if="page === 'type'" class="detail-section">
@@ -403,5 +528,28 @@ th { background: #f5f5f5; }
 .search { width: 100%; box-sizing: border-box; padding: 5px 8px; margin-bottom: 8px; border: 1px solid #ccc; }
 .info-block { border: 1px solid #e0e0e0; padding: 8px; margin-bottom: 8px; border-radius: 4px; }
 .empty { padding: 1em; color: #999; text-align: center; }
+.adjust-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 8px; }
+.hint, .muted { color: #777; font-size: 12px; }
+.adjust-panel, .adjust-grid { display: grid; gap: 8px; min-width: 0; }
+.level-panel { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.ability-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.attr-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.battle-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.adjust-card { border: 1px solid #ddd; border-radius: 6px; padding: 8px; background: #fafafa; min-width: 0; }
+.adjust-title { font-weight: 700; margin-bottom: 4px; }
+.adjust-value { display: flex; align-items: baseline; gap: 6px; margin-bottom: 7px; font-weight: 700; color: #1565c0; }
+.adjust-value small { color: #777; font-weight: 400; }
+.adjust-card label { display: block; margin: 6px 0 3px; color: #555; font-size: 12px; }
+.stepper { display: grid; grid-template-columns: 34px minmax(44px, 1fr) 34px; max-width: 150px; border: 1px solid #d7d7d7; border-radius: 4px; overflow: hidden; background: #fff; }
+.stepper.compact { max-width: 116px; grid-template-columns: 28px 1fr 28px; }
+.stepper button { border: 0; background: #f7f7f7; cursor: pointer; font-weight: 700; line-height: 26px; }
+.stepper button:hover { background: #e8eef8; }
+.stepper input { width: 100%; min-width: 0; border: 0; border-left: 1px solid #ddd; border-right: 1px solid #ddd; text-align: center; padding: 3px 2px; background: #fff; }
+.mini-grid { display: grid; grid-template-columns: auto minmax(96px, 1fr); gap: 5px 8px; align-items: center; margin-top: 8px; }
+.mini-grid label { margin: 0; }
+.compact-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid #e0e0e0; border-radius: 6px; }
+.compact-table { min-width: 540px; }
+.compact-table th, .compact-table td { white-space: nowrap; vertical-align: middle; }
+.compact-table .stepper { margin: 0; }
 @media (max-width: 620px) { .characters-tab { flex-direction: column; } .character-list { width: 100%; max-height: 38%; border-right: 0; border-bottom: 1px solid #ddd; } }
 </style>
