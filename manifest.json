@@ -1,12 +1,15 @@
 {
-    "name": "Hello, World!",
-    "version": "1.0.0",
-    "manifest_version": 1,
-    "action": {
-        "title": "Hello, World!",
-        "icon": "/icon.svg",
-        "popover": "/",
-        "height": 600,
-        "width": 400
-    }
+  "name": "PMDnD Calculator",
+  "version": "0.1.0",
+  "manifest_version": 1,
+  "author": "Kate da EoS / owl-pm",
+  "description": "PMDnD 规则的 Owlbear Rodeo 战斗、状态、角色、检定与先攻助手。",
+  "homepage_url": "https://github.com/",
+  "action": {
+    "title": "PMDnD 计算器",
+    "icon": "/icon.svg",
+    "popover": "/",
+    "height": 720,
+    "width": 900
+  }
 }
