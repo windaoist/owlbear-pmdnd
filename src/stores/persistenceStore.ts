@@ -25,6 +25,8 @@ import { initiativeMemory, InitiativeMemory } from './initiativeStore'
 import { useCreatureStore } from './creatureStore'
 
 const ROOM_METADATA_KEY = 'top.iqimi.owl-pm/state'
+const ROOM_METADATA_CHUNK_PREFIX = 'top.iqimi.owl-pm/state/chunk/'
+const ROOM_METADATA_CHUNK_SIZE = 60_000
 const SAVE_VERSION = 1
 
 interface BattleMemorySave extends Omit<BattleMemory, 'attacker' | 'defender'> {
@@ -264,7 +266,21 @@ export function importSaveJson(text: string): void {
 
 export async function saveToRoom(): Promise<void> {
   if (!OBR.isAvailable) throw new Error('当前不在 Owlbear Rodeo 环境中')
-  await OBR.room.setMetadata({ [ROOM_METADATA_KEY]: exportSaveJson() })
+  const json = exportSaveJson()
+  const chunks: Record<string, string | { version: number; savedAt: string; chunkCount: number }> = {}
+  const chunkCount = Math.ceil(json.length / ROOM_METADATA_CHUNK_SIZE)
+  for (let i = 0; i < chunkCount; i++) {
+    chunks[`${ROOM_METADATA_CHUNK_PREFIX}${i}`] = json.slice(
+      i * ROOM_METADATA_CHUNK_SIZE,
+      (i + 1) * ROOM_METADATA_CHUNK_SIZE
+    )
+  }
+  chunks[ROOM_METADATA_KEY] = {
+    version: SAVE_VERSION,
+    savedAt: new Date().toISOString(),
+    chunkCount,
+  }
+  await OBR.room.setMetadata(chunks)
 }
 
 export async function loadFromRoom(): Promise<void> {
@@ -274,6 +290,19 @@ export async function loadFromRoom(): Promise<void> {
   if (!data) throw new Error('当前房间没有 PMDnD 存档')
   if (typeof data === 'string') {
     importSaveJson(data)
+  } else if (
+    typeof data === 'object' &&
+    data != null &&
+    'chunkCount' in data &&
+    typeof data.chunkCount === 'number'
+  ) {
+    const chunks: string[] = []
+    for (let i = 0; i < data.chunkCount; i++) {
+      const chunk = metadata[`${ROOM_METADATA_CHUNK_PREFIX}${i}`]
+      if (typeof chunk !== 'string') throw new Error(`房间存档缺少分片 ${i + 1}/${data.chunkCount}`)
+      chunks.push(chunk)
+    }
+    importSaveJson(chunks.join(''))
   } else {
     applySaveData(data as AppSaveData)
   }

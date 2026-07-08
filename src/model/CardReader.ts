@@ -770,7 +770,7 @@ export function readCardFromXlsx(file: xlsx.WorkBook): Creature {
 
     const description = movesList[`AA${row}`]?.v ?? ''
 
-    const movepowers: MovePower[] = [new MovePower(0, 0, '无属性', '特殊', '无性相', true, '')]
+    const movepowers: MovePower[] = [new MovePower(0, 0, '无属性', '特殊', '无性相', false, '')]
 
     try {
       if (powerRaw != null && powerRaw !== '') {

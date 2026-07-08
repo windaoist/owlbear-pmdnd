@@ -194,7 +194,7 @@ export function moveUseCharge(): void {
 // ═══════════════════════════════════════════════════════════
 
 export function currentPower(): MovePower {
-  return currentMove().powerList[moveMemory.value.selectedPowerIdx] ?? new MovePower(0, 0, '无属性', '特殊', '无性相', true, '')
+  return currentMove().powerList[moveMemory.value.selectedPowerIdx] ?? new MovePower(0, 0, '无属性', '特殊', '无性相', false, '')
 }
 
 export function isNoPower(): boolean {
@@ -263,8 +263,8 @@ export function setCurrentMove(): void {
 
   const damageDefense = pwr.psType == '物理' ? '物防' : '特防'
 
-  // 无威力 → 纯功能性招式（不切换 attackType，只记录 PP）
-  if (isNoPower() || battleMemory.value.defender == null) {
+  // 没有目标时只记录 PP；0 威力招式仍进入对应子页并按威力 0 计算。
+  if (battleMemory.value.defender == null) {
     battleMemory.value.attackType = 0
     if (mov.name) {
       battleMemory.value.spellName = mov.name
@@ -276,7 +276,7 @@ export function setCurrentMove(): void {
   }
 
   // ── 状态招式 → attackType = 3 ──
-  if (pwr.isStatus) {
+  if (pwr.isStatus && pwr.power > 0) {
     battleMemory.value.attackType = 3
     battleMemoryStatus.value.costPP = costPPOverride
     battleMemoryStatus.value.battleLvD = 0
@@ -307,7 +307,7 @@ export function setCurrentMove(): void {
     battleMemoryStatus.value.enableAccuracyAdvance = 0
   }
   // ── 伤害招式 → attackType = 1 ──
-  else if (damageTypeList.includes(pwr.elemType)) {
+  else if (damageTypeList.includes(pwr.elemType) || pwr.power == 0) {
     if (battleMemory.value.attacker == null) return
     battleMemory.value.attackType = 1
     battleMemory.value.costPP = costPPOverride
