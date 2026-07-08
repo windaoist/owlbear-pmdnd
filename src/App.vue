@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import OBR from '@owlbear-rodeo/sdk'
 import TabBattle from './components/TabBattle.vue'
 import TabAoe from './components/TabAoe.vue'
@@ -28,6 +28,7 @@ const tabs = [
 ]
 
 onMounted(async () => {
+  window.addEventListener('owl-pm-open-tab', handleOpenTab)
   if (OBR.isAvailable) {
     OBR.onReady(() => {
       isReady.value = true
@@ -36,6 +37,15 @@ onMounted(async () => {
   }
   isReady.value = true
 })
+
+onUnmounted(() => {
+  window.removeEventListener('owl-pm-open-tab', handleOpenTab)
+})
+
+function handleOpenTab(event: Event): void {
+  const tab = (event as CustomEvent<string>).detail
+  if (tabs.some((item) => item.key === tab)) activeTab.value = tab
+}
 </script>
 
 <template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   damageTypeList,
   damageAspectList,
@@ -14,6 +14,7 @@ import {
   moveMemory,
   currentMove,
   currentPower,
+  currentDC,
   setCurrentMove,
   damageCalc,
   healCalc,
@@ -78,6 +79,7 @@ import {
   getAttackAdvantage,
   onChangeSelectedCreature,
 } from '../stores/battleStore'
+import { checkMemory } from '../stores/checkStore'
 import { useCreatureStore } from '../stores/creatureStore'
 import { toAdvantage, valueToColor } from '../utils'
 import BattleCharacterSidebar from './BattleCharacterSidebar.vue'
@@ -88,6 +90,8 @@ const { creatures } = useCreatureStore()
 const memory = battleMemory
 const memoryHeal = battleMemoryHeal
 const memoryStatus = battleMemoryStatus
+const showMoveDescription = ref(false)
+const saveAbilities = ['力量', '敏捷', '体质', '智力', '感知', '魅力']
 
 function handleSelectCreature(code: string): void {
   onChangeSelectedCreature(creatures.value, code)
@@ -211,6 +215,17 @@ function scrollPowerIdx(delta: number): void {
 
 const currentSelectedPower = computed(() => currentPower())
 const hasMultiplePowers = computed(() => currentMove().powerList.length > 2)
+
+function openSaveCheck(skill: string): void {
+  if (!memory.value.defender) return
+  checkMemory.value.chosen.clear()
+  checkMemory.value.chosen.add(memory.value.defender.code())
+  checkMemory.value.rollMode = 'save'
+  checkMemory.value.checkSkill = skill
+  checkMemory.value.abilityOverride = ''
+  checkMemory.value.difficulty = currentDC()
+  window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'check' }))
+}
 </script>
 
 <template>
@@ -242,28 +257,45 @@ const hasMultiplePowers = computed(() => currentMove().powerList.length > 2)
 
         <!-- 招式选择（攻击方已选且有招式时显示） -->
         <div v-if="memory.attacker && attackerMoves.length > 0" class="move-selector">
-          <label class="move-label">招式</label>
-          <select
-            class="sel move-sel"
-            :value="moveMemory.selectedMove"
-            @change="selectMove(($event.target as HTMLSelectElement).value)"
-            @wheel.prevent="
-              ($event.deltaY < 0
-                ? (moveMemory.selectedMove = attackerMoves[Math.max(0, attackerMoves.indexOf(moveMemory.selectedMove) - 1)])
-                : (moveMemory.selectedMove = attackerMoves[Math.min(attackerMoves.length - 1, attackerMoves.indexOf(moveMemory.selectedMove) + 1)]),
-              setCurrentMove())
-            "
-          >
-            <option value="">（手动输入）</option>
-            <option v-for="m in attackerMoves" :key="m" :value="m">{{ m }}</option>
-          </select>
-          <!-- 多段威力选择 -->
-          <template v-if="hasMultiplePowers">
-            <span class="power-nav" @click="scrollPowerIdx(-1)">◀</span>
-            <span class="power-info">{{ currentSelectedPower.message() }}</span>
-            <span class="power-nav" @click="scrollPowerIdx(1)">▶</span>
-          </template>
-          <span v-else class="power-info">{{ currentSelectedPower.message() }}</span>
+          <div class="move-line">
+            <label class="move-label">招式</label>
+            <select
+              class="sel move-sel"
+              :value="moveMemory.selectedMove"
+              @change="selectMove(($event.target as HTMLSelectElement).value)"
+              @wheel.prevent="
+                ($event.deltaY < 0
+                  ? (moveMemory.selectedMove = attackerMoves[Math.max(0, attackerMoves.indexOf(moveMemory.selectedMove) - 1)])
+                  : (moveMemory.selectedMove = attackerMoves[Math.min(attackerMoves.length - 1, attackerMoves.indexOf(moveMemory.selectedMove) + 1)]),
+                setCurrentMove())
+              "
+            >
+              <option value="">（手动输入）</option>
+              <option v-for="m in attackerMoves" :key="m" :value="m">{{ m }}</option>
+            </select>
+            <template v-if="hasMultiplePowers">
+              <span class="power-nav" @click="scrollPowerIdx(-1)">◀</span>
+              <span class="power-info">{{ currentSelectedPower.message() }}</span>
+              <span class="power-nav" @click="scrollPowerIdx(1)">▶</span>
+            </template>
+            <span v-else class="power-info">{{ currentSelectedPower.message() }}</span>
+            <button class="bar-btn" @click="showMoveDescription = !showMoveDescription">
+              {{ showMoveDescription ? '收起描述' : '展开描述' }}
+            </button>
+          </div>
+          <div v-if="memory.defender" class="save-shortcuts">
+            <span>快速豁免 DC {{ currentDC() }}</span>
+            <button v-for="skill in saveAbilities" :key="skill" class="bar-btn" @click="openSaveCheck(skill)">
+              {{ skill }} {{ currentDC() }}
+            </button>
+          </div>
+          <textarea
+            v-if="showMoveDescription"
+            v-model="currentMove().description"
+            class="move-description"
+            spellcheck="false"
+            placeholder="暂无招式描述"
+          />
         </div>
 
         <div class="bar-row">
@@ -690,12 +722,20 @@ const hasMultiplePowers = computed(() => currentMove().powerList.length > 2)
 /* ── 招式选择器 ── */
 .move-selector {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 5px 8px;
   background: #f0f4ff;
   border-bottom: 1px solid #dde;
   font-size: 13px;
+}
+
+.move-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .move-label {
@@ -726,5 +766,25 @@ const hasMultiplePowers = computed(() => currentMove().powerList.length > 2)
   font-size: 11px;
   color: #666;
   white-space: nowrap;
+}
+
+.save-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #555;
+}
+
+.move-description {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid #d7dceb;
+  padding: 6px;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.45;
 }
 </style>

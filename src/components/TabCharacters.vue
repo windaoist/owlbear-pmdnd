@@ -202,6 +202,11 @@ function stepAttributeFlat(c: Creature, key: AttributeKey, delta: number): void 
   refreshCurrent()
 }
 
+function stepAttributeBase(c: Creature, key: AttributeKey, delta: number): void {
+  c.attributeChangeBase[key] = n(c.attributeChangeBase[key]) + delta
+  refreshCurrent()
+}
+
 function stepBattleAbility(c: Creature, key: BattleAbilityKey, delta: number): void {
   c.battleAbilityDChange[key] = n(c.battleAbilityDChange[key]) + delta
   refreshCurrent()
@@ -345,6 +350,7 @@ function resetAdjustments(c: Creature): void {
               <button @click="stepAbility(current, row.key, 1)">＋</button>
             </div>
             <div class="mini-grid">
+              <div class="advance-hint">以下填写优劣势值，正数为优势，负数为劣势。</div>
               <label>攻击</label>
               <div class="stepper compact">
                 <button @click="stepAbilityAdvance(current, 'abilityMoveMdf', row.key, -1)">−</button>
@@ -373,18 +379,26 @@ function resetAdjustments(c: Creature): void {
           <div v-for="row in attributeAdjustRows" :key="row.key" class="adjust-card">
             <div class="adjust-title">{{ row.label }}</div>
             <div class="adjust-value">{{ current.attribute(row.index) }} <small>状态 {{ toMod(current.grandStatus().attributeMdf.get(row.index)) }}%</small></div>
-            <label>临时百分比</label>
+            <label>{{ row.index > 0 && row.index < 6 ? '变化等级' : '临时百分比' }}</label>
             <div class="stepper">
               <button @click="stepAttributePercent(current, row.key, -5)">−</button>
               <input v-model.number="current.attributeDChange[row.key]" type="number" @change="refreshCurrent" />
               <button @click="stepAttributePercent(current, row.key, 5)">＋</button>
             </div>
-            <label>临时数值</label>
+            <label>{{ row.index > 0 && row.index < 6 ? '变化（状态）' : '临时数值' }}</label>
             <div class="stepper">
               <button @click="stepAttributeFlat(current, row.key, -1)">−</button>
               <input v-model.number="current.attributeChange[row.key]" type="number" @change="refreshCurrent" />
               <button @click="stepAttributeFlat(current, row.key, 1)">＋</button>
             </div>
+            <template v-if="row.index > 0 && row.index < 6">
+              <label>变化等级基准</label>
+              <div class="stepper">
+                <button @click="stepAttributeBase(current, row.key, -1)">−</button>
+                <input v-model.number="current.attributeChangeBase[row.key]" type="number" @change="refreshCurrent" />
+                <button @click="stepAttributeBase(current, row.key, 1)">＋</button>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -547,6 +561,7 @@ th { background: #f5f5f5; }
 .stepper input { width: 100%; min-width: 0; border: 0; border-left: 1px solid #ddd; border-right: 1px solid #ddd; text-align: center; padding: 3px 2px; background: #fff; }
 .mini-grid { display: grid; grid-template-columns: auto minmax(96px, 1fr); gap: 5px 8px; align-items: center; margin-top: 8px; }
 .mini-grid label { margin: 0; }
+.advance-hint { grid-column: 1 / -1; color: #777; font-size: 11px; }
 .compact-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid #e0e0e0; border-radius: 6px; }
 .compact-table { min-width: 540px; }
 .compact-table th, .compact-table td { white-space: nowrap; vertical-align: middle; }

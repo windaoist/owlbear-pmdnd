@@ -9,6 +9,7 @@ import {
   moveMemory,
   currentMove,
   currentPower,
+  currentDC,
   setCurrentMove,
   battleLv,
   spellTypeStab,
@@ -22,6 +23,7 @@ import {
   envTypeMdfTotal,
   moveUseCharge,
 } from '../stores/battleStore'
+import { checkMemory } from '../stores/checkStore'
 import { useCreatureStore } from '../stores/creatureStore'
 import { d20, toMod, valueToColor } from '../utils'
 
@@ -79,6 +81,8 @@ const healMode = ref<'heal' | 'shield'>('heal')
 const statusMode = ref<'damage' | 'heal' | 'shield'>('damage')
 const batchAdvantageDelta = ref(0)
 const batchDicerollD = ref(0)
+const showMoveDescription = ref(false)
+const saveAbilities = ['力量', '敏捷', '体质', '智力', '感知', '魅力']
 
 const attackerMoves = computed(() => memory.value.attacker?.getMoveList() ?? [])
 const hasMultiplePowers = computed(() => currentMove().powerList.length > 1)
@@ -133,7 +137,6 @@ function chooseCaster(code: string): void {
   if (memory.value.attacker) {
     memoryHeal.value.battleLvD = 100 - memory.value.attacker.battleLv()
   }
-  targets.value = targets.value.filter((target) => target.code !== code)
   ensureDefender()
 }
 
@@ -158,7 +161,7 @@ function defaultTargetEntry(code: string): TargetEntry {
 
 function ensureTargets(): void {
   targets.value = targets.value
-    .filter((target) => findByCode(target.code) && target.code !== memory.value.attacker?.code())
+    .filter((target) => findByCode(target.code))
     .map((target) => ({ ...defaultTargetEntry(target.code), ...target }))
   ensureDefender()
 }
@@ -438,6 +441,16 @@ function copyLog(): void {
   navigator.clipboard.writeText(logText.value)
 }
 
+function openSaveCheck(skill: string): void {
+  checkMemory.value.chosen.clear()
+  for (const creature of selectedTargets.value) checkMemory.value.chosen.add(creature.code())
+  checkMemory.value.rollMode = 'save'
+  checkMemory.value.checkSkill = skill
+  checkMemory.value.abilityOverride = ''
+  checkMemory.value.difficulty = currentDC()
+  window.dispatchEvent(new CustomEvent('owl-pm-open-tab', { detail: 'check' }))
+}
+
 watch(
   () => [creatures.value.length, memory.value.attacker?.code(), memory.value.attackType],
   () => ensureTargets(),
@@ -469,7 +482,31 @@ watch(
           <button v-if="hasMultiplePowers" class="bar-btn" @click="scrollPowerIdx(-1)">◀</button>
           <span class="power-info">{{ currentPower().message() }}</span>
           <button v-if="hasMultiplePowers" class="bar-btn" @click="scrollPowerIdx(1)">▶</button>
+          <button class="bar-btn" @click="showMoveDescription = !showMoveDescription">
+            {{ showMoveDescription ? '收起描述' : '展开描述' }}
+          </button>
         </template>
+      </div>
+      <div v-if="memory.attacker && moveMemory.selectedMove" class="move-extra">
+        <div class="save-shortcuts">
+          <span>快速豁免 DC {{ currentDC() }}</span>
+          <button
+            v-for="skill in saveAbilities"
+            :key="skill"
+            class="bar-btn"
+            :disabled="targets.length == 0"
+            @click="openSaveCheck(skill)"
+          >
+            {{ skill }} {{ currentDC() }}
+          </button>
+        </div>
+        <textarea
+          v-if="showMoveDescription"
+          v-model="currentMove().description"
+          class="move-description"
+          spellcheck="false"
+          placeholder="暂无招式描述"
+        />
       </div>
 
       <div class="bar-row">
@@ -487,7 +524,7 @@ watch(
           <div class="section-title">目标</div>
           <div class="target-grid">
             <button
-              v-for="creature in creatures.filter((item) => item.code() !== memory.attacker?.code())"
+              v-for="creature in creatures"
               :key="creature.code()"
               class="target-btn"
               :class="{ active: targets.some((target) => target.code === creature.code()) }"
@@ -718,6 +755,31 @@ watch(
 .power-info {
   color: #666;
   font-size: 12px;
+}
+
+.move-extra {
+  padding: 0 8px 6px;
+}
+
+.save-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  color: #555;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.move-description {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid #d7dceb;
+  padding: 6px;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .empty {
