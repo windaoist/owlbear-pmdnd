@@ -2,9 +2,11 @@
 import { computed, ref } from 'vue'
 import { showHP } from '../model/Damage'
 import { ElemType, Skill, sizeString, tagList } from '../model/DataType'
+import type { Ability, Status } from '../model/DataType'
 import type { Creature } from '../model/Creature'
+import { S_Null } from '../model/Status'
 import { useCreatureStore } from '../stores/creatureStore'
-import { valueToColor, valueToColorBinary } from '../utils'
+import { toMod, valueToColor, valueToColorBinary } from '../utils'
 
 const { creatures, removeCreature } = useCreatureStore()
 
@@ -23,6 +25,36 @@ const factionColor: Record<string, string> = {
   中立: '#f9a825',
   敌方: '#e53935',
 }
+
+const abilityAdjustRows = [
+  { label: '力量', key: 'str', index: 0 },
+  { label: '敏捷', key: 'dex', index: 1 },
+  { label: '体质', key: 'con', index: 2 },
+  { label: '智力', key: 'int', index: 3 },
+  { label: '感知', key: 'wis', index: 4 },
+  { label: '魅力', key: 'cha', index: 5 },
+] as const
+
+const attributeAdjustRows = [
+  { label: 'HP上限', key: 'hp', index: 0 },
+  { label: '物攻', key: 'patk', index: 1 },
+  { label: '物防', key: 'pdef', index: 2 },
+  { label: '特攻', key: 'satk', index: 3 },
+  { label: '特防', key: 'sdef', index: 4 },
+  { label: '速度', key: 'spd', index: 5 },
+  { label: 'PP上限', key: 'pp', index: 6 },
+] as const
+
+const battleAbilityAdjustRows = [
+  { label: '先攻', key: 'initiative', index: 0 },
+  { label: '命中', key: 'acc', index: 1 },
+  { label: '闪避', key: 'eva', index: 2 },
+  { label: '效果强度', key: 'pwr', index: 3 },
+] as const
+
+const DM_ADJUST_STATUS = 'DM临时调整'
+type AbilityAdvanceField = 'abilityMoveMdf' | 'abilityCheckMdf' | 'abilitySaveMdf'
+type AbilityKey = keyof Pick<Ability, 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha'>
 
 const current = computed<Creature | null>(() => {
   if (!selectedCode.value && creatures.value.length > 0) selectedCode.value = creatures.value[0].code()
@@ -109,6 +141,48 @@ function deleteCurrent(): void {
   removeCreature(cur.code())
   selectedCode.value = creatures.value[0]?.code() ?? ''
 }
+
+function refreshCurrent(): void {
+  current.value?.validate()
+}
+
+function dmAdjustmentStatus(c: Creature): Status {
+  let status = c.status.status.find((s) => s.name === DM_ADJUST_STATUS)
+  if (!status) {
+    status = S_Null.duplicate()
+    status.name = DM_ADJUST_STATUS
+    status.stack = 1
+    status.lossOnTurn = 0
+    c.status.status.push(status)
+  }
+  return status
+}
+
+function dmAbilityAdvance(c: Creature, field: AbilityAdvanceField, key: AbilityKey): number {
+  return dmAdjustmentStatus(c)[field][key]
+}
+
+function setDmAbilityAdvance(c: Creature, field: AbilityAdvanceField, key: AbilityKey, value: number): void {
+  dmAdjustmentStatus(c)[field][key] = Number(value) || 0
+  c.shallowRefresh()
+}
+
+function resetAdjustments(c: Creature): void {
+  if (!window.confirm(`清空“${c.name()}”的 DM 临时调整吗？`)) return
+  for (const row of abilityAdjustRows) c.abilityBaseD[row.key] = 0
+  for (const row of attributeAdjustRows) {
+    c.attributeDChange[row.key] = 0
+    c.attributeChange[row.key] = 0
+  }
+  for (const row of battleAbilityAdjustRows) c.battleAbilityDChange[row.key] = 0
+  for (let i = 0; i < c.skillAdvance.value.length; i++) c.skillAdvance.value[i] = 0
+  for (let i = 0; i < c.typeChange.value.length; i++) {
+    c.typeChange.value[i] = 0
+    c.typeMdfChange.value[i] = 0
+  }
+  c.status.status = c.status.status.filter((s) => s.name !== DM_ADJUST_STATUS)
+  c.validate()
+}
 </script>
 
 <template>
@@ -142,8 +216,8 @@ function deleteCurrent(): void {
       </header>
 
       <nav class="sub-tabs">
-        <button v-for="p in ['summary','ability','type','feature','equipment','move','class']" :key="p" :class="{ active: page === p }" @click="page = p">
-          {{ ({summary:'概要', ability:'能力', type:'属性抗性', feature:'特性', equipment:'装备道具', move:'招式', class:'种族职业'} as Record<string,string>)[p] }}
+        <button v-for="p in ['summary','ability','adjust','type','feature','equipment','move','class']" :key="p" :class="{ active: page === p }" @click="page = p">
+          {{ ({summary:'概要', ability:'能力', adjust:'调整', type:'属性抗性', feature:'特性', equipment:'装备道具', move:'招式', class:'种族职业'} as Record<string,string>)[p] }}
         </button>
       </nav>
 
@@ -168,6 +242,94 @@ function deleteCurrent(): void {
         <table><thead><tr><th>能力</th><th>值</th><th>调整值</th><th>豁免</th></tr></thead><tbody><tr v-for="r in abilityRows(current)" :key="r.name"><td>{{ r.name }}</td><td>{{ r.value }}</td><td>{{ r.mod }}</td><td>{{ r.save }}</td></tr></tbody></table>
         <h3>技能</h3>
         <table><tbody><tr v-for="s in Skill.nameList" :key="s"><td>{{ s }}</td><td>{{ current.skillMod(s) }}</td><td>豁免 {{ current.skillSave(s) }}</td><td>优劣势 {{ current.skillAdvance.get(s) }}</td></tr></tbody></table>
+      </section>
+
+      <section v-else-if="page === 'adjust'" class="detail-section">
+        <div class="adjust-header">
+          <div>
+            <h3>DM 临时调整</h3>
+            <p class="hint">这里修改的是角色模型上的临时字段，会直接影响战斗、AOE、检定和先攻。</p>
+          </div>
+          <button class="danger" @click="resetAdjustments(current)">清空临时调整</button>
+        </div>
+
+        <h3>战斗属性修正</h3>
+        <table>
+          <thead><tr><th>项目</th><th>当前值</th><th>常驻</th><th>装备</th><th>临时%</th><th>状态%</th></tr></thead>
+          <tbody>
+            <tr v-for="row in attributeAdjustRows" :key="row.key">
+              <td>{{ row.label }}</td>
+              <td>{{ current.attribute(row.index) }}</td>
+              <td><input v-model.number="current.attributeDBase[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td><input v-model.number="current.attributeDEquip[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td><input v-model.number="current.attributeDChange[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td :style="{ color: valueToColor(-current.grandStatus().attributeMdf.get(row.index)) }">{{ toMod(current.grandStatus().attributeMdf.get(row.index)) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>六维临时修正与优劣势</h3>
+        <table>
+          <thead><tr><th>能力</th><th>当前值</th><th>调整值</th><th>豁免</th><th>临时修正</th><th>攻击优劣势</th><th>检定优劣势</th><th>豁免优劣势</th><th>状态修正</th></tr></thead>
+          <tbody>
+            <tr v-for="row in abilityAdjustRows" :key="row.key">
+              <td>{{ row.label }}</td>
+              <td>{{ current.ability(row.index) }}</td>
+              <td>{{ current.modifier(row.index) }}</td>
+              <td>{{ current.save(row.index) }}</td>
+              <td><input v-model.number="current.abilityBaseD[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td><input class="num-inp" type="number" :value="dmAbilityAdvance(current, 'abilityMoveMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilityMoveMdf', row.key, Number(($event.target as HTMLInputElement).value))" /></td>
+              <td><input class="num-inp" type="number" :value="dmAbilityAdvance(current, 'abilityCheckMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilityCheckMdf', row.key, Number(($event.target as HTMLInputElement).value))" /></td>
+              <td><input class="num-inp" type="number" :value="dmAbilityAdvance(current, 'abilitySaveMdf', row.key)" @input="setDmAbilityAdvance(current, 'abilitySaveMdf', row.key, Number(($event.target as HTMLInputElement).value))" /></td>
+              <td :style="{ color: valueToColor(-current.grandStatus().abilityMdf.get(row.index)) }">{{ toMod(current.grandStatus().abilityMdf.get(row.index)) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>战斗能力修正</h3>
+        <table>
+          <thead><tr><th>项目</th><th>当前值</th><th>基础</th><th>装备</th><th>状态栏</th><th>临时</th><th>状态效果</th></tr></thead>
+          <tbody>
+            <tr v-for="row in battleAbilityAdjustRows" :key="row.key">
+              <td>{{ row.label }}</td>
+              <td>{{ current.getBattleAbilityD(row.index) + (row.key === 'initiative' ? current.initiativeRaw() : row.key === 'acc' ? current.accuracyRaw() : row.key === 'eva' ? current.evasionRaw() : current.effectPowerRaw()) }}</td>
+              <td><input v-model.number="current.battleAbilityDBase[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td><input v-model.number="current.battleAbilityDEquip[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td><input v-model.number="current.battleAbilityDState[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td><input v-model.number="current.battleAbilityDChange[row.key]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td :style="{ color: valueToColor(-current.grandStatus().battleAbilityMdf.get(row.index)) }">{{ toMod(current.grandStatus().battleAbilityMdf.get(row.index)) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>技能检定/豁免优劣势</h3>
+        <table>
+          <thead><tr><th>技能</th><th>检定</th><th>豁免</th><th>DM优劣势</th><th>检定状态</th><th>豁免状态</th></tr></thead>
+          <tbody>
+            <tr v-for="(skill, index) in Skill.nameList" :key="skill">
+              <td>{{ skill }}</td>
+              <td>{{ current.skillMod(skill) }}</td>
+              <td>{{ current.skillSave(skill) }}</td>
+              <td><input v-model.number="current.skillAdvance.value[index]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td :style="{ color: valueToColor(-current.skillCheckAdvanceStatus(skill)) }">{{ toMod(current.skillCheckAdvanceStatus(skill)) }}</td>
+              <td :style="{ color: valueToColor(-current.skillSaveAdvanceStatus(skill)) }">{{ toMod(current.skillSaveAdvanceStatus(skill)) }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>属性一致临时修正</h3>
+        <table>
+          <thead><tr><th>属性</th><th>当前属性一致</th><th>DM修正</th><th>当前伤害修正</th><th>DM抗性修正</th></tr></thead>
+          <tbody>
+            <tr v-for="(elem, index) in ElemType.nameList" :key="elem">
+              <td>{{ elem }}</td>
+              <td>{{ current.typeStab(elem) }}</td>
+              <td><input v-model.number="current.typeChange.value[index]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+              <td>{{ current.typeMdf(elem) }}</td>
+              <td><input v-model.number="current.typeMdfChange.value[index]" class="num-inp" type="number" @change="refreshCurrent" /></td>
+            </tr>
+          </tbody>
+        </table>
       </section>
 
       <section v-else-if="page === 'type'" class="detail-section">
