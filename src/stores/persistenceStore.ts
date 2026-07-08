@@ -88,7 +88,7 @@ function reviveStatus(value: unknown): Status {
   return status
 }
 
-function reviveStatusManager(value: unknown): StatusManager {
+export function reviveStatusManager(value: unknown): StatusManager {
   const manager = setProto(value, StatusManager)
   manager.status = Array.isArray(manager.status) ? manager.status.map(reviveStatus) : []
   return manager

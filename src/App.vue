@@ -13,13 +13,18 @@ import SaveLoadControls from './components/SaveLoadControls.vue'
 import { useCreatureStore } from './stores/creatureStore'
 import { useObrSessionStore } from './stores/obrSessionStore'
 import { useRequestStore } from './stores/requestStore'
+import { useRuntimeSyncStore } from './stores/runtimeSyncStore'
 import manifest from '../public/manifest.json'
 
 const { creatures } = useCreatureStore()
 const session = useObrSessionStore()
 const requestStore = useRequestStore()
+const runtimeSync = useRuntimeSyncStore()
 const sessionRole = session.role
 const pendingRequestCount = requestStore.pendingCount
+const remoteRuntimeCount = runtimeSync.remoteCount
+const canPushRuntime = runtimeSync.canPush
+const canApplyRuntime = runtimeSync.canApply
 const appVersion = manifest.version
 const githubUrl = manifest.homepage_url
 
@@ -42,12 +47,14 @@ onMounted(async () => {
     OBR.onReady(async () => {
       await session.init()
       await requestStore.init()
+      await runtimeSync.init()
       isReady.value = true
     })
     return
   }
   await session.init()
   await requestStore.init()
+  await runtimeSync.init()
   isReady.value = true
 })
 
@@ -68,6 +75,23 @@ function handleOpenTab(event: Event): void {
       <span class="toolbar-title">PMDnD 计算器</span>
       <span class="toolbar-count">角色：{{ creatures.length }} 人</span>
       <span class="toolbar-count">{{ sessionRole }}</span>
+      <span v-if="remoteRuntimeCount > 0" class="toolbar-count">同步：{{ remoteRuntimeCount }} 角色</span>
+      <button
+        v-if="canPushRuntime"
+        class="toolbar-request"
+        title="立即把当前 HP、PP、状态和调整推送给 PL"
+        @click="runtimeSync.pushNow"
+      >
+        推送同步
+      </button>
+      <button
+        v-if="canApplyRuntime"
+        class="toolbar-request"
+        title="立即应用 DM 推送的 HP、PP、状态和调整"
+        @click="runtimeSync.applyNow"
+      >
+        应用同步
+      </button>
       <button
         v-if="pendingRequestCount > 0"
         class="toolbar-request"
