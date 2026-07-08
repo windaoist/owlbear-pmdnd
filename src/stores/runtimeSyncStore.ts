@@ -6,6 +6,7 @@ import { useObrSessionStore } from './obrSessionStore'
 import { S_Null, getStatus } from '../model/Status'
 import { StatusManager } from '../model/StatusManager'
 import type { Status } from '../model/DataType'
+import { InitiativeMemory, initiativeMemory } from './initiativeStore'
 
 const RUNTIME_METADATA_KEY = 'owl-pm/runtime'
 const RUNTIME_CHANNEL = 'owl-pm/runtime'
@@ -17,6 +18,7 @@ interface CreatureRuntimeState {
   currentHP: number
   tempHP: number
   currentPP: number
+  tempInitiative: number
   inRound: boolean
   status: CompactStatus[]
   adjustments: Record<string, CompactObject>
@@ -27,6 +29,17 @@ interface CreatureRuntimeState {
 type RuntimeStateMap = Record<string, CreatureRuntimeState>
 type CompactObject = Record<string, number> | { value: Array<[number, number]> }
 
+interface InitiativeRuntimeState {
+  initMode: InitiativeMemory['initMode']
+  currentInitiativeIdx: number
+  disabledCodes: string[]
+}
+
+interface RuntimePayload {
+  states: RuntimeStateMap
+  initiative: InitiativeRuntimeState
+}
+
 interface CompactStatus {
   name: string
   stack: number
@@ -35,6 +48,7 @@ interface CompactStatus {
 }
 
 const remoteStates = ref<RuntimeStateMap>({})
+const remoteInitiative = ref<InitiativeRuntimeState | null>(null)
 const syncEnabled = ref(true)
 const lastSyncAt = ref(0)
 const lastAppliedAt = ref(0)
@@ -71,15 +85,17 @@ export function useRuntimeSyncStore() {
       if (!applyRuntimePayload(event.data)) return
       if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
     })
-
+    //如果你是GM，监听本地角色变化并推送到远端
     if (session.role.value === 'GM') {
       watch(
-        () => runtimeSignature(creatures.value),
+        () => `${runtimeSignature(creatures.value)}|${initiativeSignature(initiativeMemory.value)}`,
         () => {
           if (!syncEnabled.value || applyingRemote) return
+          //这里调用广播
           scheduleWrite()
         },
       )
+      //如果你是PL，监听远端状态变化并应用到本地角色。
     } else if (session.role.value === 'PLAYER') {
       watch(
         () => creatures.value.map((creature) => creature.code()).join('|'),
@@ -115,6 +131,7 @@ export function useRuntimeSyncStore() {
   return {
     syncEnabled,
     remoteStates,
+    remoteInitiative,
     lastSyncAt,
     lastAppliedAt,
     lastError,
@@ -138,15 +155,18 @@ function scheduleWrite(): void {
     writeRuntimeStates()
   }, SYNC_DEBOUNCE_MS)
 }
-
+//dm端推送同步
 async function writeRuntimeStates(): Promise<void> {
   if (!OBR.isAvailable) return
   try {
     const { creatures } = useCreatureStore()
     const next = createRuntimeStateMap(creatures.value)
+    const initiative = createInitiativeRuntimeState()
     remoteStates.value = next
-    const plain = toPlain(next)
-    await OBR.broadcast.sendMessage(RUNTIME_CHANNEL, { states: plain }, { destination: 'REMOTE' })
+    remoteInitiative.value = initiative
+    const plain = toPlain({ states: next, initiative } satisfies RuntimePayload)
+    //广播消息
+    await OBR.broadcast.sendMessage(RUNTIME_CHANNEL, plain, { destination: 'REMOTE' })
     let metadataError = ''
     try {
       await OBR.room.setMetadata({ [RUNTIME_METADATA_KEY]: plain })
@@ -176,6 +196,7 @@ function createRuntimeStateMap(creatures: Creature[]): RuntimeStateMap {
       currentHP: creature.currentHP,
       tempHP: creature.tempHP,
       currentPP: creature.currentPP,
+      tempInitiative: creature.tempInitiative,
       inRound: creature.inRound,
       status: compactStatuses(creature),
       adjustments: {
@@ -197,6 +218,18 @@ function createRuntimeStateMap(creatures: Creature[]): RuntimeStateMap {
   return next
 }
 
+function createInitiativeRuntimeState(): InitiativeRuntimeState {
+  return createInitiativeRuntimeStateFrom(initiativeMemory.value)
+}
+
+function createInitiativeRuntimeStateFrom(memory: InitiativeMemory): InitiativeRuntimeState {
+  return {
+    initMode: memory.initMode,
+    currentInitiativeIdx: memory.currentInitiativeIdx,
+    disabledCodes: [...memory.disabledCodes],
+  }
+}
+//pl端应用同步
 function applyRemoteStatesToCreatures(): void {
   const { creatures } = useCreatureStore()
   appliedCount.value = 0
@@ -215,6 +248,7 @@ function applyRemoteStatesToCreatures(): void {
       applyRuntimeState(creature, state)
       appliedCount.value += 1
     }
+    if (remoteInitiative.value) applyInitiativeRuntimeState(remoteInitiative.value)
     lastAppliedAt.value = Date.now()
     lastError.value = ''
     lastMessage.value =
@@ -232,6 +266,7 @@ function applyRuntimeState(creature: Creature, state: CreatureRuntimeState): voi
   creature.currentHP = numberOr(creature.currentHP, state.currentHP)
   creature.tempHP = Math.max(0, numberOr(creature.tempHP, state.tempHP))
   creature.currentPP = numberOr(creature.currentPP, state.currentPP)
+  creature.tempInitiative = numberOr(creature.tempInitiative, state.tempInitiative)
   creature.inRound = Boolean(state.inRound)
   creature.status = new StatusManager(reviveCompactStatuses(state.status))
 
@@ -247,6 +282,14 @@ function applyRuntimeState(creature: Creature, state: CreatureRuntimeState): voi
   applyCompactObject(creature.typeMdfChange, state.adjustments?.typeMdfChange)
 
   creature.validate()
+}
+
+function applyInitiativeRuntimeState(state: InitiativeRuntimeState): void {
+  initiativeMemory.value.initMode = state.initMode
+  initiativeMemory.value.currentInitiativeIdx = numberOr(0, state.currentInitiativeIdx)
+  initiativeMemory.value.disabledCodes = Array.isArray(state.disabledCodes)
+    ? state.disabledCodes.filter((code) => typeof code === 'string')
+    : []
 }
 
 function applyMetadata(metadata: Record<string, unknown>): void {
@@ -265,6 +308,7 @@ function applyRuntimePayload(raw: unknown): boolean {
     if (state) next[code] = state
   }
   remoteStates.value = next
+  remoteInitiative.value = normalizeInitiativeRuntimeState(rawRecord.initiative)
   return true
 }
 
@@ -278,6 +322,22 @@ function normalizeRuntimeState(value: unknown): CreatureRuntimeState | null {
 
 function runtimeSignature(creatures: Creature[]): string {
   return JSON.stringify(createRuntimeStateMap(creatures))
+}
+
+function initiativeSignature(memory: InitiativeMemory): string {
+  return JSON.stringify(createInitiativeRuntimeStateFrom(memory))
+}
+
+function normalizeInitiativeRuntimeState(value: unknown): InitiativeRuntimeState | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const state = value as Partial<InitiativeRuntimeState>
+  return {
+    initMode: state.initMode === 'grouped' ? 'grouped' : 'individual',
+    currentInitiativeIdx: Math.max(0, Math.floor(numberOr(0, state.currentInitiativeIdx))),
+    disabledCodes: Array.isArray(state.disabledCodes)
+      ? state.disabledCodes.filter((code) => typeof code === 'string')
+      : [],
+  }
 }
 
 function numberOr(fallback: number, value: unknown): number {

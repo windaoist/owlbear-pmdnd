@@ -40,7 +40,7 @@ function copyText(text: string): void {
     <header class="inbox-header">
       <div>
         <h2>{{ isGm ? 'DM 请求箱' : '我的提交' }}</h2>
-        <p>{{ isGm ? '批准后再用现有战斗面板结算。第一版不会自动修改角色数据。' : '这里显示你提交给 DM 的请求状态。' }}</p>
+        <p>{{ isGm ? 'PL在这里查看自己向DM提交的请求。DM选择批准后会自动应用HP与PP变化。' : '这里显示你提交给 DM 的请求状态。' }}</p>
       </div>
       <span class="role-pill">{{ session.role }}</span>
     </header>
