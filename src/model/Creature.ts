@@ -41,6 +41,7 @@ export class Creature {
   skillRace: Skill
   skillEquip: Skill
   skillState: Skill
+  skillDChange: Skill
   skillAdvance: Skill
   skillMin: Skill
   typeRace: ElemType
@@ -66,8 +67,6 @@ export class Creature {
   currentPP: number
   skillCountType: string
   tempInitiative: number
-  tempCharacterLv: number
-  tempBattleLv: number
 
   currentAction: number
   currentBonusAction: number
@@ -167,6 +166,7 @@ export class Creature {
     this.skillRace = skillRace
     this.skillEquip = skillEquip
     this.skillState = skillState
+    this.skillDChange = new Skill([])
     this.skillAdvance = skillAdvance
     this.skillMin = skillMin
 
@@ -198,8 +198,6 @@ export class Creature {
 
     this.skillCountType = skillCountType
     this.tempInitiative = 1
-    this.tempCharacterLv = 0
-    this.tempBattleLv = 0
 
     this.currentAction = action
     this.currentBonusAction = bonusAction
@@ -247,8 +245,6 @@ export class Creature {
     this.currentLoadCapacity = isFinite(this.currentLoadCapacity) ? this.currentLoadCapacity : 0
 
     this.tempInitiative = Math.max(1, Math.min(10, Math.round(this.tempInitiative) || 1))
-    this.tempCharacterLv = Math.floor(Number(this.tempCharacterLv) || 0)
-    this.tempBattleLv = Math.floor(Number(this.tempBattleLv) || 0)
 
     if (!this.faction || !['玩家', '友方', '中立', '敌方'].includes(this.faction)) {
       this.faction = '敌方'
@@ -276,6 +272,8 @@ export class Creature {
     this.skillRace.validate()
     this.skillEquip.validate()
     this.skillState.validate()
+    if (!this.skillDChange) this.skillDChange = new Skill([])
+    this.skillDChange.validate()
     this.skillAdvance.validate()
     this.skillMin.validate()
     this.typeRace.validate()
@@ -353,7 +351,7 @@ export class Creature {
     this.cachedGrandStatus = this.status.grandStatus()
   }
 
-  characterLvBase(): number {
+  characterLv(): number {
     // this.validate()
     let val = 0
     this.races.forEach((v) => {
@@ -362,21 +360,13 @@ export class Creature {
     return Math.floor(val)
   }
 
-  characterLv(): number {
-    return Math.max(1, Math.floor(this.characterLvBase() + this.tempCharacterLv))
-  }
-
-  battleLvBase(): number {
+  battleLv(): number {
     // this.validate()
     let val = 0
     this.races.forEach((v) => {
       val += v.battleLv()
     })
     return Math.floor(val)
-  }
-
-  battleLv(): number {
-    return Math.max(1, Math.floor(this.battleLvBase() + this.tempBattleLv))
   }
 
   battleLvFrom(type: string): number {
@@ -405,10 +395,6 @@ export class Creature {
     this.races.forEach((v) => {
       val += v.getAttribute(index)
     })
-    const battleLvBase = this.battleLvBase()
-    if (battleLvBase > 0 && this.tempBattleLv != 0) {
-      val *= this.battleLv() / battleLvBase
-    }
 
     if (index == 0) {
       // HP
@@ -791,7 +777,8 @@ export class Creature {
       this.skillPro.get(skill) +
         this.skillRace.get(skill) +
         this.skillEquip.get(skill) +
-        this.skillState.get(skill)
+        this.skillState.get(skill) +
+        this.skillDChange.get(skill)
     )
   }
 
@@ -931,11 +918,11 @@ export class Creature {
         return Math.min(t, x + 5)
       }
     }
-    this.attributeChange.patk = fading(this.attributeChange.patk, this.attributeChangeBase.patk)
-    this.attributeChange.pdef = fading(this.attributeChange.pdef, this.attributeChangeBase.pdef)
-    this.attributeChange.satk = fading(this.attributeChange.satk, this.attributeChangeBase.satk)
-    this.attributeChange.sdef = fading(this.attributeChange.sdef, this.attributeChangeBase.sdef)
-    this.attributeChange.spd = fading(this.attributeChange.spd, this.attributeChangeBase.spd)
+    this.attributeDChange.patk = fading(this.attributeDChange.patk, this.attributeChangeBase.patk)
+    this.attributeDChange.pdef = fading(this.attributeDChange.pdef, this.attributeChangeBase.pdef)
+    this.attributeDChange.satk = fading(this.attributeDChange.satk, this.attributeChangeBase.satk)
+    this.attributeDChange.sdef = fading(this.attributeDChange.sdef, this.attributeChangeBase.sdef)
+    this.attributeDChange.spd = fading(this.attributeDChange.spd, this.attributeChangeBase.spd)
   }
 
   newRound(): void {

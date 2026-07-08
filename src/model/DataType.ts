@@ -604,6 +604,7 @@ export class Skill {
   }
 
   validate(): void {
+    this.value.length = Skill.nameList.length
     for (let i = 0; i < this.value.length; i++) {
       this.value[i] = Number(this.value[i]) || 0
       this.value[i] = isFinite(this.value[i]) ? this.value[i] : 0

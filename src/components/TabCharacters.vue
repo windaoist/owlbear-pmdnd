@@ -36,13 +36,11 @@ const abilityAdjustRows = [
 ] as const
 
 const attributeAdjustRows = [
-  { label: 'HP上限', key: 'hp', index: 0 },
   { label: '物攻', key: 'patk', index: 1 },
   { label: '物防', key: 'pdef', index: 2 },
   { label: '特攻', key: 'satk', index: 3 },
   { label: '特防', key: 'sdef', index: 4 },
   { label: '速度', key: 'spd', index: 5 },
-  { label: 'PP上限', key: 'pp', index: 6 },
 ] as const
 
 const battleAbilityAdjustRows = [
@@ -173,18 +171,13 @@ function n(value: unknown): number {
   return Number(value) || 0
 }
 
-function stepCharacterLv(c: Creature, delta: number): void {
-  c.tempCharacterLv = n(c.tempCharacterLv) + delta
-  refreshCurrent()
-}
-
-function stepBattleLv(c: Creature, delta: number): void {
-  c.tempBattleLv = n(c.tempBattleLv) + delta
-  refreshCurrent()
-}
-
 function stepAbility(c: Creature, key: AbilityKey, delta: number): void {
   c.abilityBaseD[key] = n(c.abilityBaseD[key]) + delta
+  refreshCurrent()
+}
+
+function stepAbilitySave(c: Creature, key: AbilityKey, delta: number): void {
+  c.abilitySaveD[key] = n(c.abilitySaveD[key]) + delta
   refreshCurrent()
 }
 
@@ -217,6 +210,18 @@ function stepSkillAdvance(c: Creature, index: number, delta: number): void {
   refreshCurrent()
 }
 
+function stepSkillDirect(c: Creature, index: number, delta: number): void {
+  c.skillDChange.value[index] = n(c.skillDChange.value[index]) + delta
+  refreshCurrent()
+}
+
+function stepRaceLv(c: Creature, index: number, delta: number): void {
+  const race = c.races[index]
+  if (!race) return
+  race.lv = Math.max(0, n(race.lv) + delta)
+  refreshCurrent()
+}
+
 function stepTypeChange(c: Creature, index: number, delta: number): void {
   c.typeChange.value[index] = n(c.typeChange.value[index]) + delta
   refreshCurrent()
@@ -229,14 +234,16 @@ function stepTypeMdfChange(c: Creature, index: number, delta: number): void {
 
 function resetAdjustments(c: Creature): void {
   if (!window.confirm(`清空“${c.name()}”的 DM 临时调整吗？`)) return
-  c.tempCharacterLv = 0
-  c.tempBattleLv = 0
-  for (const row of abilityAdjustRows) c.abilityBaseD[row.key] = 0
+  for (const row of abilityAdjustRows) {
+    c.abilityBaseD[row.key] = 0
+    c.abilitySaveD[row.key] = 0
+  }
   for (const row of attributeAdjustRows) {
     c.attributeDChange[row.key] = 0
     c.attributeChange[row.key] = 0
   }
   for (const row of battleAbilityAdjustRows) c.battleAbilityDChange[row.key] = 0
+  for (let i = 0; i < c.skillDChange.value.length; i++) c.skillDChange.value[i] = 0
   for (let i = 0; i < c.skillAdvance.value.length; i++) c.skillAdvance.value[i] = 0
   for (let i = 0; i < c.typeChange.value.length; i++) {
     c.typeChange.value[i] = 0
@@ -291,8 +298,8 @@ function resetAdjustments(c: Creature): void {
           <label>阵营 <select v-model="current.faction"><option>玩家</option><option>友方</option><option>中立</option><option>敌方</option></select></label>
         </div>
         <div class="chip-row">
-          <span>PLV {{ current.characterLv() }}<small v-if="current.tempCharacterLv">（{{ current.characterLvBase() }}{{ toMod(current.tempCharacterLv) }}）</small></span>
-          <span>CR {{ current.battleLv() }}<small v-if="current.tempBattleLv">（{{ current.battleLvBase() }}{{ toMod(current.tempBattleLv) }}）</small></span>
+          <span>PLV {{ current.characterLv() }}</span>
+          <span>CR {{ current.battleLv() }}</span>
           <span>施法 {{ current.castLv() }}</span><span>{{ sizeString(current.sizeAbility.size) }}</span><span>移动 {{ current.sizeAbility.mov }}m</span><span>负重 {{ totalWeight(current).toFixed(2) }}</span>
         </div>
         <h3>当前状态</h3>
@@ -317,27 +324,6 @@ function resetAdjustments(c: Creature): void {
           <button class="danger" @click="resetAdjustments(current)">清空临时调整</button>
         </div>
 
-        <div class="adjust-panel level-panel">
-          <div class="adjust-card">
-            <div class="adjust-title">角色等级</div>
-            <div class="adjust-value">{{ current.characterLv() }} <small>基础 {{ current.characterLvBase() }}</small></div>
-            <div class="stepper">
-              <button @click="stepCharacterLv(current, -1)">−</button>
-              <input v-model.number="current.tempCharacterLv" type="number" @change="refreshCurrent" />
-              <button @click="stepCharacterLv(current, 1)">＋</button>
-            </div>
-          </div>
-          <div class="adjust-card">
-            <div class="adjust-title">战斗等级</div>
-            <div class="adjust-value">{{ current.battleLv() }} <small>基础 {{ current.battleLvBase() }}</small></div>
-            <div class="stepper">
-              <button @click="stepBattleLv(current, -1)">−</button>
-              <input v-model.number="current.tempBattleLv" type="number" @change="refreshCurrent" />
-              <button @click="stepBattleLv(current, 1)">＋</button>
-            </div>
-          </div>
-        </div>
-
         <h3>六维与优劣势</h3>
         <div class="adjust-grid ability-grid">
           <div v-for="row in abilityAdjustRows" :key="row.key" class="adjust-card">
@@ -348,6 +334,12 @@ function resetAdjustments(c: Creature): void {
               <button @click="stepAbility(current, row.key, -1)">−</button>
               <input v-model.number="current.abilityBaseD[row.key]" type="number" @change="refreshCurrent" />
               <button @click="stepAbility(current, row.key, 1)">＋</button>
+            </div>
+            <label>豁免修正</label>
+            <div class="stepper">
+              <button @click="stepAbilitySave(current, row.key, -1)">−</button>
+              <input v-model.number="current.abilitySaveD[row.key]" type="number" @change="refreshCurrent" />
+              <button @click="stepAbilitySave(current, row.key, 1)">＋</button>
             </div>
             <div class="mini-grid">
               <div class="advance-hint">以下填写优劣势值，正数为优势，负数为劣势。</div>
@@ -379,26 +371,24 @@ function resetAdjustments(c: Creature): void {
           <div v-for="row in attributeAdjustRows" :key="row.key" class="adjust-card">
             <div class="adjust-title">{{ row.label }}</div>
             <div class="adjust-value">{{ current.attribute(row.index) }} <small>状态 {{ toMod(current.grandStatus().attributeMdf.get(row.index)) }}%</small></div>
-            <label>{{ row.index > 0 && row.index < 6 ? '变化等级' : '临时百分比' }}</label>
+            <label>变化等级</label>
             <div class="stepper">
               <button @click="stepAttributePercent(current, row.key, -5)">−</button>
               <input v-model.number="current.attributeDChange[row.key]" type="number" @change="refreshCurrent" />
               <button @click="stepAttributePercent(current, row.key, 5)">＋</button>
             </div>
-            <label>{{ row.index > 0 && row.index < 6 ? '变化（状态）' : '临时数值' }}</label>
+            <label>变化（状态）</label>
             <div class="stepper">
               <button @click="stepAttributeFlat(current, row.key, -1)">−</button>
               <input v-model.number="current.attributeChange[row.key]" type="number" @change="refreshCurrent" />
               <button @click="stepAttributeFlat(current, row.key, 1)">＋</button>
             </div>
-            <template v-if="row.index > 0 && row.index < 6">
-              <label>变化等级基准</label>
-              <div class="stepper">
-                <button @click="stepAttributeBase(current, row.key, -1)">−</button>
-                <input v-model.number="current.attributeChangeBase[row.key]" type="number" @change="refreshCurrent" />
-                <button @click="stepAttributeBase(current, row.key, 1)">＋</button>
-              </div>
-            </template>
+            <label>变化等级基准</label>
+            <div class="stepper">
+              <button @click="stepAttributeBase(current, row.key, -1)">−</button>
+              <input v-model.number="current.attributeChangeBase[row.key]" type="number" @change="refreshCurrent" />
+              <button @click="stepAttributeBase(current, row.key, 1)">＋</button>
+            </div>
           </div>
         </div>
 
@@ -418,10 +408,10 @@ function resetAdjustments(c: Creature): void {
           </div>
         </div>
 
-        <h3>技能检定/豁免优劣势</h3>
+        <h3>技能检定/豁免修正</h3>
         <div class="compact-table-wrap">
           <table class="compact-table">
-            <thead><tr><th>技能</th><th>检定</th><th>豁免</th><th>DM优劣势</th><th>状态</th></tr></thead>
+            <thead><tr><th>技能</th><th>检定</th><th>豁免</th><th>DM数值</th><th>DM优劣势</th></tr></thead>
             <tbody>
               <tr v-for="(skill, index) in Skill.nameList" :key="skill">
                 <td>{{ skill }}</td>
@@ -429,13 +419,17 @@ function resetAdjustments(c: Creature): void {
                 <td>{{ toMod(current.skillSave(skill)) }}</td>
                 <td>
                   <div class="stepper compact">
+                    <button @click="stepSkillDirect(current, index, -1)">−</button>
+                    <input v-model.number="current.skillDChange.value[index]" type="number" @change="refreshCurrent" />
+                    <button @click="stepSkillDirect(current, index, 1)">＋</button>
+                  </div>
+                </td>
+                <td>
+                  <div class="stepper compact">
                     <button @click="stepSkillAdvance(current, index, -1)">−</button>
                     <input v-model.number="current.skillAdvance.value[index]" type="number" @change="refreshCurrent" />
                     <button @click="stepSkillAdvance(current, index, 1)">＋</button>
                   </div>
-                </td>
-                <td>
-                  检 {{ toMod(current.skillCheckAdvanceStatus(skill)) }} / 豁 {{ toMod(current.skillSaveAdvanceStatus(skill)) }}
                 </td>
               </tr>
             </tbody>
@@ -501,7 +495,26 @@ function resetAdjustments(c: Creature): void {
       </section>
 
       <section v-else class="detail-section">
-        <table><thead><tr><th>类型</th><th>名称</th><th>等级</th><th>CR倍率</th><th>施法倍率</th><th>属性</th></tr></thead><tbody><tr v-for="r in current.races" :key="`${r.type}-${r.name}`"><td>{{ r.type }}</td><td>{{ r.name }}</td><td>{{ r.lv }}</td><td>{{ r.battleScale }}</td><td>{{ r.castScale }}</td><td>{{ r.attribute.hp }}/{{ r.attribute.patk }}/{{ r.attribute.pdef }}/{{ r.attribute.satk }}/{{ r.attribute.sdef }}/{{ r.attribute.spd }}/{{ r.attribute.pp }}</td></tr></tbody></table>
+        <div class="chip-row"><span>PLV {{ current.characterLv() }}</span><span>CR {{ current.battleLv() }}</span><span>施法 {{ current.castLv() }}</span></div>
+        <table>
+          <thead><tr><th>类型</th><th>名称</th><th>等级</th><th>CR倍率</th><th>施法倍率</th><th>属性</th></tr></thead>
+          <tbody>
+            <tr v-for="(r, index) in current.races" :key="`${r.type}-${r.name}`">
+              <td>{{ r.type }}</td>
+              <td>{{ r.name }}</td>
+              <td>
+                <div class="stepper compact">
+                  <button @click="stepRaceLv(current, index, -1)">−</button>
+                  <input v-model.number="r.lv" type="number" min="0" @change="refreshCurrent" />
+                  <button @click="stepRaceLv(current, index, 1)">＋</button>
+                </div>
+              </td>
+              <td>{{ r.battleScale }}</td>
+              <td>{{ r.castScale }}</td>
+              <td>{{ r.attribute.hp }}/{{ r.attribute.patk }}/{{ r.attribute.pdef }}/{{ r.attribute.satk }}/{{ r.attribute.sdef }}/{{ r.attribute.spd }}/{{ r.attribute.pp }}</td>
+            </tr>
+          </tbody>
+        </table>
       </section>
     </main>
   </div>
