@@ -152,6 +152,22 @@ function refreshCurrent(): void {
   current.value?.validate()
 }
 
+function setCardSide(c: Creature, side: 'enemy' | 'friendly'): void {
+  if (side === 'enemy') {
+    c.faction = '敌方'
+    c.publicVisibility = 'hidden'
+  } else {
+    c.faction = '友方'
+    c.publicVisibility = 'full'
+  }
+  refreshCurrent()
+}
+
+function resetVisibilityByFaction(c: Creature): void {
+  c.publicVisibility = c.defaultPublicVisibility()
+  refreshCurrent()
+}
+
 function dmAdjustmentStatus(c: Creature): Status {
   let status = c.status.status.find((s) => s.name === DM_ADJUST_STATUS)
   if (!status) {
@@ -294,12 +310,14 @@ function resetAdjustments(c: Creature): void {
       <section v-if="isGm" class="visibility-panel">
         <label>卡牌类型 <strong>{{ current.isEnemyCard() ? '敌怪/NPC' : 'PC/友方' }}</strong></label>
         <label>难度等级 <input v-model.number="current.difficultyModifier" type="number" step="0.05" @change="refreshCurrent" /></label>
+        <button @click="setCardSide(current, 'enemy')">设为敌人卡</button>
+        <button @click="setCardSide(current, 'friendly')">设为友方卡</button>
         <label>PL可见性
           <select v-model="current.publicVisibility">
             <option v-for="option in creaturePublicVisibilityOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
           </select>
         </label>
-        <button @click="current.publicVisibility = current.defaultPublicVisibility()">按难度重置默认</button>
+        <button @click="resetVisibilityByFaction(current)">按阵营重置默认</button>
       </section>
 
       <section v-if="!currentCanSeeFull" class="detail-section limited-card">
@@ -324,7 +342,7 @@ function resetAdjustments(c: Creature): void {
           <label>HP <input v-model.number="current.currentHP" type="number" /> / {{ current.maxHP() }}</label>
           <label>护盾 <input v-model.number="current.tempHP" type="number" /></label>
           <label>PP <input v-model.number="current.currentPP" type="number" /> / {{ current.maxPP() }}</label>
-          <label>阵营 <select v-model="current.faction"><option>玩家</option><option>友方</option><option>中立</option><option>敌方</option></select></label>
+          <label>阵营 <select v-model="current.faction" @change="resetVisibilityByFaction(current)"><option>玩家</option><option>友方</option><option>中立</option><option>敌方</option></select></label>
         </div>
         <div class="chip-row">
           <span>PLV {{ current.characterLv() }}</span>

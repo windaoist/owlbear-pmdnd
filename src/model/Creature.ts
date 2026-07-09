@@ -790,7 +790,7 @@ export class Creature {
   }
 
   isEnemyCard(): boolean {
-    return this.difficultyModifier !== 1.25
+    return this.faction === '敌方'
   }
 
   defaultPublicVisibility(): CreaturePublicVisibility {

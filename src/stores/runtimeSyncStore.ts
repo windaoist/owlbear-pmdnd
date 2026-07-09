@@ -7,7 +7,7 @@ import { S_Null, getStatus } from '../model/Status'
 import { StatusManager } from '../model/StatusManager'
 import type { Status } from '../model/DataType'
 import { InitiativeMemory, initiativeMemory } from './initiativeStore'
-import { reviveCreature } from './persistenceStore'
+import type { CreaturePublicVisibility } from '../model/Creature'
 
 const RUNTIME_METADATA_KEY = 'owl-pm/runtime'
 const RUNTIME_CHANNEL = 'owl-pm/runtime'
@@ -21,6 +21,8 @@ interface CreatureRuntimeState {
   currentPP: number
   tempInitiative: number
   inRound: boolean
+  faction: string
+  publicVisibility: CreaturePublicVisibility
   status: CompactStatus[]
   adjustments: Record<string, CompactObject>
   updatedAt: number
@@ -39,7 +41,6 @@ interface InitiativeRuntimeState {
 interface RuntimePayload {
   states: RuntimeStateMap
   initiative: InitiativeRuntimeState
-  creatures?: unknown[]
 }
 
 interface CompactStatus {
@@ -51,7 +52,6 @@ interface CompactStatus {
 
 const remoteStates = ref<RuntimeStateMap>({})
 const remoteInitiative = ref<InitiativeRuntimeState | null>(null)
-const remoteCreatureCards = ref<Creature[]>([])
 const syncEnabled = ref(true)
 const lastSyncAt = ref(0)
 const lastAppliedAt = ref(0)
@@ -78,15 +78,15 @@ export function useRuntimeSyncStore() {
     if (!OBR.isAvailable) return
     const metadata = await OBR.room.getMetadata()
     applyMetadata(metadata)
-    if (session.role.value === 'PLAYER') applyRemoteCardsAndStatesToCreatures()
+    if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
 
     unsubscribeMetadata = OBR.room.onMetadataChange((metadata) => {
       applyMetadata(metadata)
-      if (session.role.value === 'PLAYER') applyRemoteCardsAndStatesToCreatures()
+      if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
     })
     unsubscribeRuntime = OBR.broadcast.onMessage(RUNTIME_CHANNEL, (event) => {
       if (!applyRuntimePayload(event.data)) return
-      if (session.role.value === 'PLAYER') applyRemoteCardsAndStatesToCreatures()
+      if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
     })
     //如果你是GM，监听本地角色变化并推送到远端
     if (session.role.value === 'GM') {
@@ -104,7 +104,7 @@ export function useRuntimeSyncStore() {
         () => creatures.value.map((creature) => creature.code()).join('|'),
         () => {
           if (!syncEnabled.value) return
-          applyRemoteCardsAndStatesToCreatures()
+          applyRemoteStatesToCreatures()
         },
       )
     }
@@ -128,14 +128,13 @@ export function useRuntimeSyncStore() {
   }
 
   function applyNow(): void {
-    applyRemoteCardsAndStatesToCreatures()
+    applyRemoteStatesToCreatures()
   }
 
   return {
     syncEnabled,
     remoteStates,
     remoteInitiative,
-    remoteCreatureCards,
     lastSyncAt,
     lastAppliedAt,
     lastError,
@@ -166,18 +165,16 @@ async function writeRuntimeStates(): Promise<void> {
     const { creatures } = useCreatureStore()
     const next = createRuntimeStateMap(creatures.value)
     const initiative = createInitiativeRuntimeState()
-    const creatureCards = createCreatureCardSnapshots(creatures.value)
     remoteStates.value = next
     remoteInitiative.value = initiative
-    remoteCreatureCards.value = creatureCards.map((card) => reviveCreature(card))
-    const plain = toPlain({ states: next, initiative, creatures: creatureCards } satisfies RuntimePayload)
+    const plain = toPlain({ states: next, initiative } satisfies RuntimePayload)
     //广播消息
     await OBR.broadcast.sendMessage(RUNTIME_CHANNEL, plain, { destination: 'REMOTE' })
     let metadataError = ''
     try {
       await OBR.room.setMetadata({ [RUNTIME_METADATA_KEY]: plain })
     } catch (error) {
-      metadataError = error instanceof Error ? error.message : String(error)
+      metadataError = errorToMessage(error)
     }
     lastSyncAt.value = Date.now()
     lastError.value = metadataError
@@ -185,7 +182,7 @@ async function writeRuntimeStates(): Promise<void> {
       ? `已广播 ${Object.keys(next).length} 个角色，但快照写入失败。`
       : `已推送 ${Object.keys(next).length} 个角色。`
   } catch (error) {
-    lastError.value = error instanceof Error ? error.message : String(error)
+    lastError.value = errorToMessage(error)
   }
 }
 
@@ -204,6 +201,8 @@ function createRuntimeStateMap(creatures: Creature[]): RuntimeStateMap {
       currentPP: creature.currentPP,
       tempInitiative: creature.tempInitiative,
       inRound: creature.inRound,
+      faction: creature.faction,
+      publicVisibility: creature.publicVisibility,
       status: compactStatuses(creature),
       adjustments: {
         abilityBaseD: compactObject(creature.abilityBaseD),
@@ -226,10 +225,6 @@ function createRuntimeStateMap(creatures: Creature[]): RuntimeStateMap {
 
 function createInitiativeRuntimeState(): InitiativeRuntimeState {
   return createInitiativeRuntimeStateFrom(initiativeMemory.value)
-}
-
-function createCreatureCardSnapshots(creatures: Creature[]): unknown[] {
-  return JSON.parse(JSON.stringify(creatures)) as unknown[]
 }
 
 function createInitiativeRuntimeStateFrom(memory: InitiativeMemory): InitiativeRuntimeState {
@@ -266,32 +261,9 @@ function applyRemoteStatesToCreatures(): void {
         ? `已应用 ${appliedCount.value} 个角色。`
         : `没有匹配的角色 code。远端 ${Object.keys(remoteStates.value).length} 个，本地 ${creatures.value.length} 个。`
   } catch (error) {
-    lastError.value = error instanceof Error ? error.message : String(error)
+    lastError.value = errorToMessage(error)
   } finally {
     applyingRemote = false
-  }
-}
-
-function applyRemoteCardsAndStatesToCreatures(): void {
-  applyRemoteCreatureCards()
-  applyRemoteStatesToCreatures()
-}
-
-function applyRemoteCreatureCards(): void {
-  const { creatures } = useCreatureStore()
-  if (remoteCreatureCards.value.length === 0) return
-  const localByCode = new Map(creatures.value.map((creature) => [creature.code(), creature]))
-  for (const remote of remoteCreatureCards.value) {
-    const code = remote.code()
-    if (!code) continue
-    const snapshot = JSON.parse(JSON.stringify(remote))
-    const existing = localByCode.get(code)
-    if (existing) {
-      Object.assign(existing, snapshot)
-      reviveCreature(existing)
-    } else {
-      creatures.value.push(reviveCreature(snapshot))
-    }
   }
 }
 
@@ -301,6 +273,12 @@ function applyRuntimeState(creature: Creature, state: CreatureRuntimeState): voi
   creature.currentPP = numberOr(creature.currentPP, state.currentPP)
   creature.tempInitiative = numberOr(creature.tempInitiative, state.tempInitiative)
   creature.inRound = Boolean(state.inRound)
+  if (isCreatureFaction(state.faction)) {
+    creature.faction = state.faction
+  }
+  if (isCreaturePublicVisibility(state.publicVisibility)) {
+    creature.publicVisibility = state.publicVisibility
+  }
   creature.status = new StatusManager(reviveCompactStatuses(state.status))
 
   applyCompactObject(creature.abilityBaseD, state.adjustments?.abilityBaseD)
@@ -342,21 +320,7 @@ function applyRuntimePayload(raw: unknown): boolean {
   }
   remoteStates.value = next
   remoteInitiative.value = normalizeInitiativeRuntimeState(rawRecord.initiative)
-  remoteCreatureCards.value = normalizeRemoteCreatureCards(rawRecord.creatures)
   return true
-}
-
-function normalizeRemoteCreatureCards(value: unknown): Creature[] {
-  if (!Array.isArray(value)) return []
-  const result: Creature[] = []
-  for (const raw of value) {
-    try {
-      result.push(reviveCreature(raw))
-    } catch {
-      // 忽略单张坏卡，避免一次同步破坏整个运行时快照。
-    }
-  }
-  return result
 }
 
 function normalizeRuntimeState(value: unknown): CreatureRuntimeState | null {
@@ -368,10 +332,7 @@ function normalizeRuntimeState(value: unknown): CreatureRuntimeState | null {
 }
 
 function runtimeSignature(creatures: Creature[]): string {
-  return JSON.stringify({
-    states: createRuntimeStateMap(creatures),
-    creatures: createCreatureCardSnapshots(creatures),
-  })
+  return JSON.stringify(createRuntimeStateMap(creatures))
 }
 
 function initiativeSignature(memory: InitiativeMemory): string {
@@ -387,6 +348,24 @@ function normalizeInitiativeRuntimeState(value: unknown): InitiativeRuntimeState
     disabledCodes: Array.isArray(state.disabledCodes)
       ? state.disabledCodes.filter((code) => typeof code === 'string')
       : [],
+  }
+}
+
+function isCreaturePublicVisibility(value: unknown): value is CreaturePublicVisibility {
+  return value === 'hidden' || value === 'name' || value === 'vitals' || value === 'full'
+}
+
+function isCreatureFaction(value: unknown): value is string {
+  return value === '玩家' || value === '友方' || value === '中立' || value === '敌方'
+}
+
+function errorToMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
   }
 }
 
