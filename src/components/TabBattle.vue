@@ -81,7 +81,7 @@ import {
   onChangeSelectedCreature,
 } from '../stores/battleStore'
 import { checkMemory } from '../stores/checkStore'
-import { useCreatureStore } from '../stores/creatureStore'
+import { canRoleSeeCreatureFull, useCreatureStore } from '../stores/creatureStore'
 import { useObrSessionStore } from '../stores/obrSessionStore'
 import { useRequestStore } from '../stores/requestStore'
 import type { MoveApplication } from '../stores/requestStore'
@@ -197,6 +197,9 @@ const healShieldResult = computed(() => healShieldCalc())
 const statusDamageResult = computed(() => statusCalc(false))
 const statusHealResult = computed(() => statusCalc(true))
 const canApplyDirectly = computed(() => !session.isPlayer.value)
+const defenderNeedsDmResolution = computed(() =>
+  memory.value.defender != null && !canRoleSeeCreatureFull(session.role.value, memory.value.defender)
+)
 
 // ── 招式选择 ──
 const attackerMoves = computed(() => {
@@ -375,7 +378,11 @@ async function submitCurrentMove(actionLabel: string, text: string, moveName: st
       </div>
 
       <!-- ═══ 子页：攻击 ═══ -->
-      <div v-if="memory.attackType == 1 && memory.attacker != null && memory.defender != null" class="battle-body">
+      <div v-if="defenderNeedsDmResolution" class="battle-body private-target">
+        目标卡尚未完全公开。你可以选定目标，但完整防御、抗性和结算需要交给 DM 处理。
+      </div>
+
+      <div v-if="memory.attackType == 1 && memory.attacker != null && memory.defender != null && !defenderNeedsDmResolution" class="battle-body">
 
         <div class="field">
           招式 <input v-model="memory.spellName" class="inp" style="width:10em" />
@@ -497,7 +504,7 @@ async function submitCurrentMove(actionLabel: string, text: string, moveName: st
       </div>
 
       <!-- ═══ 子页：治疗/护盾 ═══ -->
-      <div v-if="memory.attackType == 2 && memory.attacker != null && memory.defender != null" class="battle-body">
+      <div v-if="memory.attackType == 2 && memory.attacker != null && memory.defender != null && !defenderNeedsDmResolution" class="battle-body">
 
         <div class="field">
           招式 <input v-model="memoryHeal.spellName" class="inp" style="width:10em" />
@@ -594,7 +601,7 @@ async function submitCurrentMove(actionLabel: string, text: string, moveName: st
       </div>
 
       <!-- ═══ 子页：状态/自定义伤害 ═══ -->
-      <div v-if="memory.attackType == 3 && memory.defender != null" class="battle-body">
+      <div v-if="memory.attackType == 3 && memory.defender != null && !defenderNeedsDmResolution" class="battle-body">
 
         <div class="field">
           {{ memory.defender.name() }} 受到来自
@@ -739,6 +746,12 @@ async function submitCurrentMove(actionLabel: string, text: string, moveName: st
 
 .battle-body {
   padding: 0.5em;
+}
+
+.private-target {
+  color: #666;
+  background: #fafafa;
+  border-top: 1px solid #eee;
 }
 
 .field {

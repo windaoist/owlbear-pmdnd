@@ -3,12 +3,15 @@ import { computed, ref } from 'vue'
 import { showHP } from '../model/Damage'
 import { ElemType, Skill, sizeString, tagList } from '../model/DataType'
 import type { Ability, Status } from '../model/DataType'
-import type { Creature } from '../model/Creature'
+import { creaturePublicVisibilityOptions, type Creature } from '../model/Creature'
 import { S_Null } from '../model/Status'
-import { useCreatureStore } from '../stores/creatureStore'
+import { canRoleSeeCreature, canRoleSeeCreatureFull, canRoleSeeCreatureVitals, useCreatureStore } from '../stores/creatureStore'
+import { useObrSessionStore } from '../stores/obrSessionStore'
 import { toMod, valueToColor, valueToColorBinary } from '../utils'
 
 const { creatures, removeCreature } = useCreatureStore()
+const session = useObrSessionStore()
+const isGm = session.isGm
 
 const selectedCode = ref('')
 const page = ref('summary')
@@ -57,12 +60,13 @@ type AttributeKey = 'hp' | 'patk' | 'pdef' | 'satk' | 'sdef' | 'spd' | 'pp'
 type BattleAbilityKey = 'initiative' | 'acc' | 'eva' | 'pwr'
 
 const current = computed<Creature | null>(() => {
-  if (!selectedCode.value && creatures.value.length > 0) selectedCode.value = creatures.value[0].code()
-  return creatures.value.find((c) => c.code() === selectedCode.value) ?? null
+  const visible = creatures.value.filter((c) => canRoleSeeCreature(session.role.value, c))
+  if (!visible.some((c) => c.code() === selectedCode.value)) selectedCode.value = visible[0]?.code() ?? ''
+  return visible.find((c) => c.code() === selectedCode.value) ?? null
 })
 
 const sortedCreatures = computed(() => {
-  let list = [...creatures.value]
+  let list = creatures.value.filter((c) => canRoleSeeCreature(session.role.value, c))
   if (filterFaction.value !== '全部') list = list.filter((c) => c.faction === filterFaction.value)
   list.sort((a, b) => {
     if (sortBy.value === 'code') return a.code().localeCompare(b.code(), 'en-US')
@@ -95,6 +99,8 @@ const equipmentRows = computed(() => {
   })
 })
 const currentMove = computed(() => current.value?.getMove(selectedMove.value) ?? null)
+const currentCanSeeFull = computed(() => current.value == null || canRoleSeeCreatureFull(session.role.value, current.value))
+const currentCanSeeVitals = computed(() => current.value != null && canRoleSeeCreatureVitals(session.role.value, current.value))
 
 function selectCreature(code: string): void {
   selectedCode.value = code
@@ -268,29 +274,52 @@ function resetAdjustments(c: Creature): void {
         :class="{ selected: current?.code() === c.code() }"
         @click="selectCreature(c.code())"
       >
-        <span class="hp-fill" :style="{ width: hpPercent(c) + '%', background: factionColor[c.faction] ?? '#999' }" />
+        <span class="hp-fill" :style="{ width: canRoleSeeCreatureVitals(session.role.value, c) ? hpPercent(c) + '%' : '0%', background: factionColor[c.faction] ?? '#999' }" />
         <span class="row-main"><b>{{ c.name() }}</b><small>{{ c.code() }} · {{ c.faction }}</small></span>
-        <span class="row-vitals">{{ showHP([c.currentHP, c.tempHP]) }}/{{ c.maxHP() }}<br />PP {{ c.currentPP }}</span>
+        <span v-if="canRoleSeeCreatureVitals(session.role.value, c)" class="row-vitals">{{ showHP([c.currentHP, c.tempHP]) }}/{{ c.maxHP() }}<br />PP {{ c.currentPP }}</span>
+        <span v-else class="row-vitals hidden-vitals">HP ?<br />PP ?</span>
       </button>
-      <div v-if="creatures.length === 0" class="empty">暂无角色，请先导入角色卡。</div>
+      <div v-if="sortedCreatures.length === 0" class="empty">暂无角色，请先导入角色卡。</div>
     </aside>
 
     <main v-if="current" class="character-detail">
       <header class="detail-header">
         <div>
           <h2>{{ current.name() }} <small>{{ current.code() }}</small></h2>
-          <p>{{ current.profile.gender }}性{{ current.profile.species }}（{{ current.profile.pronoun }}），年龄 {{ current.profile.age }}</p>
+          <p v-if="currentCanSeeFull">{{ current.profile.gender }}性{{ current.profile.species }}（{{ current.profile.pronoun }}），年龄 {{ current.profile.age }}</p>
         </div>
-        <button class="danger" @click="deleteCurrent">删除</button>
+        <button v-if="isGm" class="danger" @click="deleteCurrent">删除</button>
       </header>
 
-      <nav class="sub-tabs">
+      <section v-if="isGm" class="visibility-panel">
+        <label>卡牌类型 <strong>{{ current.isEnemyCard() ? '敌怪/NPC' : 'PC/友方' }}</strong></label>
+        <label>难度等级 <input v-model.number="current.difficultyModifier" type="number" step="0.05" @change="refreshCurrent" /></label>
+        <label>PL可见性
+          <select v-model="current.publicVisibility">
+            <option v-for="option in creaturePublicVisibilityOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+          </select>
+        </label>
+        <button @click="current.publicVisibility = current.defaultPublicVisibility()">按难度重置默认</button>
+      </section>
+
+      <section v-if="!currentCanSeeFull" class="detail-section limited-card">
+        <h3>PL 可见信息</h3>
+        <p>此卡当前不是完全公开。PL 端只会看到 DM 允许公开的部分，但本地仍保存完整 JSON，方便之后切换可见性。</p>
+        <div class="chip-row">
+          <span>{{ current.name() }}</span>
+          <span>{{ current.code() }}</span>
+          <span v-if="currentCanSeeVitals">HP {{ showHP([current.currentHP, current.tempHP]) }}/{{ current.maxHP() }}</span>
+          <span v-if="currentCanSeeVitals">PP {{ current.currentPP }}/{{ current.maxPP() }}</span>
+        </div>
+      </section>
+
+      <nav v-if="currentCanSeeFull" class="sub-tabs">
         <button v-for="p in ['summary','ability','adjust','type','feature','equipment','move','class']" :key="p" :class="{ active: page === p }" @click="page = p">
           {{ ({summary:'概要', ability:'能力', adjust:'调整', type:'属性抗性', feature:'特性', equipment:'装备道具', move:'招式', class:'种族职业'} as Record<string,string>)[p] }}
         </button>
       </nav>
 
-      <section v-if="page === 'summary'" class="detail-section">
+      <section v-if="currentCanSeeFull && page === 'summary'" class="detail-section">
         <div class="resource-grid">
           <label>HP <input v-model.number="current.currentHP" type="number" /> / {{ current.maxHP() }}</label>
           <label>护盾 <input v-model.number="current.tempHP" type="number" /></label>
@@ -308,14 +337,14 @@ function resetAdjustments(c: Creature): void {
         <table><tbody><tr v-for="row in battleRows(current)" :key="row[0]"><th>{{ row[0] }}</th><td>{{ row[1] }}</td><td :style="{ color: valueToColor(-(Number(row[2]) || 0)) }">{{ row[2] }}</td></tr></tbody></table>
       </section>
 
-      <section v-else-if="page === 'ability'" class="detail-section">
+      <section v-else-if="currentCanSeeFull && page === 'ability'" class="detail-section">
         <h3>六维</h3>
         <table><thead><tr><th>能力</th><th>值</th><th>调整值</th><th>豁免</th></tr></thead><tbody><tr v-for="r in abilityRows(current)" :key="r.name"><td>{{ r.name }}</td><td>{{ r.value }}</td><td>{{ r.mod }}</td><td>{{ r.save }}</td></tr></tbody></table>
         <h3>技能</h3>
         <table><tbody><tr v-for="s in Skill.nameList" :key="s"><td>{{ s }}</td><td>{{ current.skillMod(s) }}</td><td>豁免 {{ current.skillSave(s) }}</td><td>优劣势 {{ current.skillAdvance.get(s) }}</td></tr></tbody></table>
       </section>
 
-      <section v-else-if="page === 'adjust'" class="detail-section">
+      <section v-else-if="currentCanSeeFull && page === 'adjust'" class="detail-section">
         <div class="adjust-header">
           <div>
             <h3>DM 临时调整</h3>
@@ -465,16 +494,16 @@ function resetAdjustments(c: Creature): void {
         </div>
       </section>
 
-      <section v-else-if="page === 'type'" class="detail-section">
+      <section v-else-if="currentCanSeeFull && page === 'type'" class="detail-section">
         <table><thead><tr><th>属性</th><th>属性一致</th><th>伤害修正</th></tr></thead><tbody><tr v-for="e in ElemType.nameList" :key="e" :style="{ color: valueToColorBinary(current.typeStab(e) + current.typeMdf(e)) }"><td>{{ e }}</td><td>{{ current.typeStab(e) }}</td><td>{{ current.typeMdf(e) }}</td></tr></tbody></table>
       </section>
 
-      <section v-else-if="page === 'feature'" class="detail-section">
+      <section v-else-if="currentCanSeeFull && page === 'feature'" class="detail-section">
         <input v-model="featureKeyword" class="search" placeholder="搜索特性" />
         <article v-for="f in features" :key="`${f.source}-${f.name}`" class="info-block"><h3>{{ f.name }} <small>{{ f.source }} {{ f.sourceLevel }}</small></h3><p>{{ f.description || '无描述' }}</p></article>
       </section>
 
-      <section v-else-if="page === 'equipment'" class="detail-section">
+      <section v-else-if="currentCanSeeFull && page === 'equipment'" class="detail-section">
         <input v-model="equipmentKeyword" class="search" placeholder="搜索装备或道具" />
         <article v-for="x in equipmentRows" :key="JSON.stringify(x)" class="info-block">
           <h3>{{ 'quantity' in x ? x.name : x.name }} <small>{{ 'slot' in x ? x.slot : x.type }}</small></h3>
@@ -484,7 +513,7 @@ function resetAdjustments(c: Creature): void {
         </article>
       </section>
 
-      <section v-else-if="page === 'move'" class="detail-section">
+      <section v-else-if="currentCanSeeFull && page === 'move'" class="detail-section">
         <select v-model="selectedMove"><option value="">选择招式</option><option v-for="m in current.moves" :key="m.name" :value="m.name">{{ m.name }}</option></select>
         <article v-if="currentMove" class="info-block">
           <h3>{{ currentMove.name }} <small>{{ currentMove.ring }}环 {{ currentMove.elemType }}</small></h3>
@@ -494,7 +523,7 @@ function resetAdjustments(c: Creature): void {
         </article>
       </section>
 
-      <section v-else class="detail-section">
+      <section v-else-if="currentCanSeeFull" class="detail-section">
         <div class="chip-row"><span>PLV {{ current.characterLv() }}</span><span>CR {{ current.battleLv() }}</span><span>施法 {{ current.castLv() }}</span></div>
         <table>
           <thead><tr><th>类型</th><th>名称</th><th>等级</th><th>CR倍率</th><th>施法倍率</th><th>属性</th></tr></thead>
@@ -534,8 +563,13 @@ function resetAdjustments(c: Creature): void {
 .row-main small, h2 small { color: #777; font-weight: 400; }
 .selected .row-main small { color: #ddd; }
 .row-vitals { font-size: 11px; text-align: right; white-space: nowrap; }
+.hidden-vitals { color: #777; }
 .character-detail { flex: 1; min-width: 0; overflow: auto; padding: 10px; }
 .detail-header { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+.visibility-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; padding: 7px; border: 1px solid #ddd; border-radius: 6px; background: #fafafa; font-size: 12px; }
+.visibility-panel label { display: inline-flex; align-items: center; gap: 4px; }
+.visibility-panel input { width: 5em; }
+.limited-card { border: 1px dashed #bbb; background: #fcfcfc; padding: 10px; border-radius: 6px; }
 h2 { margin: 0; font-size: 20px; }
 h3 { margin: 10px 0 5px; font-size: 14px; }
 p { margin: 4px 0; white-space: pre-line; }

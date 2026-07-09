@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { showHP } from '../model/Damage'
-import { useCreatureStore } from '../stores/creatureStore'
+import { canRoleSeeCreature, canRoleSeeCreatureVitals, useCreatureStore } from '../stores/creatureStore'
+import { useObrSessionStore } from '../stores/obrSessionStore'
 
 const { creatures } = useCreatureStore()
+const session = useObrSessionStore()
 
 const props = defineProps<{
   onSelect: (code: string) => void
@@ -11,6 +13,7 @@ const props = defineProps<{
 }>()
 
 const selectedSet = computed(() => new Set(props.selectedCode ? [props.selectedCode] : []))
+const visibleCreatures = computed(() => creatures.value.filter((creature) => canRoleSeeCreature(session.role.value, creature)))
 
 function isSelected(code: string): boolean {
   return selectedSet.value.has(code)
@@ -24,7 +27,7 @@ function hpPercent(currentHP: number, maxHP: number): number {
 <template>
   <div class="sidebar">
     <div
-      v-for="creature in creatures"
+      v-for="creature in visibleCreatures"
       :key="creature.code()"
       class="sidebar-row"
       :class="{ selected: isSelected(creature.code()) }"
@@ -32,11 +35,11 @@ function hpPercent(currentHP: number, maxHP: number): number {
     >
       <div
         class="sidebar-hp-fill"
-        :style="{ width: hpPercent(creature.currentHP, creature.maxHP()) + '%' }"
+        :style="{ width: canRoleSeeCreatureVitals(session.role.value, creature) ? hpPercent(creature.currentHP, creature.maxHP()) + '%' : '0%' }"
       />
       <div class="sidebar-row-inner">
         <span class="sidebar-name">{{ creature.name() }}</span>
-        <span class="sidebar-vitals">
+        <span v-if="canRoleSeeCreatureVitals(session.role.value, creature)" class="sidebar-vitals">
           <span
             :style="{
               color: `hsl(${Math.max(0, Math.min(120, (120 * creature.currentHP) / creature.maxHP()))}, ${creature.currentHP > 0 ? '70%' : '100%'}, ${creature.currentHP > 0 ? '40%' : '50%'})`,
@@ -46,9 +49,10 @@ function hpPercent(currentHP: number, maxHP: number): number {
           </span>
           <span class="sidebar-pp">{{ creature.currentPP }}</span>
         </span>
+        <span v-else class="sidebar-vitals hidden-vitals">HP ?</span>
       </div>
     </div>
-    <div v-if="creatures.length === 0" style="padding: 1em; color: #999; text-align: center">
+    <div v-if="visibleCreatures.length === 0" style="padding: 1em; color: #999; text-align: center">
       暂无角色
     </div>
   </div>
@@ -113,5 +117,9 @@ function hpPercent(currentHP: number, maxHP: number): number {
 .sidebar-pp {
   margin-left: 0.3em;
   color: steelblue;
+}
+
+.hidden-vitals {
+  color: #777;
 }
 </style>

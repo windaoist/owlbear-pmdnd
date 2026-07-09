@@ -2,11 +2,13 @@
 import { computed } from 'vue'
 import { showHP } from '../model/Damage'
 import type { Creature } from '../model/Creature'
-import { useCreatureStore } from '../stores/creatureStore'
+import { canRoleSeeCreature, canRoleSeeCreatureVitals, useCreatureStore } from '../stores/creatureStore'
 import { initiativeMemory } from '../stores/initiativeStore'
+import { useObrSessionStore } from '../stores/obrSessionStore'
 import { d10 } from '../utils'
 
 const { creatures } = useCreatureStore()
+const session = useObrSessionStore()
 const memory = initiativeMemory
 
 const factionOrder: Record<string, number> = { 玩家: 0, 友方: 1, 中立: 2, 敌方: 3 }
@@ -19,8 +21,9 @@ const factionColor: Record<string, string> = {
 
 const disabledCodeSet = computed(() => new Set(memory.value.disabledCodes))
 const enabledInitiativeList = computed(() => initiativeList.value.filter((c) => !disabledCodeSet.value.has(c.code())))
+const visibleCreatures = computed(() => creatures.value.filter((creature) => canRoleSeeCreature(session.role.value, creature)))
 const initiativeList = computed<Creature[]>(() =>
-  [...creatures.value].sort((a, b) => {
+  [...visibleCreatures.value].sort((a, b) => {
     const disabledDiff = Number(disabledCodeSet.value.has(a.code())) - Number(disabledCodeSet.value.has(b.code()))
     if (disabledDiff !== 0) return disabledDiff
     const diff = b.initiative() + b.tempInitiative - (a.initiative() + a.tempInitiative)
@@ -131,8 +134,9 @@ function toggleDisabled(code: string): void {
         <div class="card-body">
           <div class="score">{{ c.initiative() + c.tempInitiative }}</div>
           <div class="formula">{{ c.initiative() }} + {{ c.tempInitiative }}</div>
-          <div class="hp-bar"><span :style="{ width: hpPercent(c) + '%' }" /></div>
-          <div class="vitals">{{ showHP([c.currentHP, c.tempHP]) }}/{{ c.maxHP() }} · PP {{ c.currentPP }}</div>
+          <div class="hp-bar"><span :style="{ width: canRoleSeeCreatureVitals(session.role.value, c) ? hpPercent(c) + '%' : '0%' }" /></div>
+          <div v-if="canRoleSeeCreatureVitals(session.role.value, c)" class="vitals">{{ showHP([c.currentHP, c.tempHP]) }}/{{ c.maxHP() }} · PP {{ c.currentPP }}</div>
+          <div v-else class="vitals">HP ? · PP ?</div>
           <div v-if="disabledCodeSet.has(c.code())" class="disabled-label">禁用</div>
         </div>
       </button>
@@ -154,8 +158,8 @@ function toggleDisabled(code: string): void {
             <td>{{ c.name() }} <small>{{ c.code() }}</small></td>
             <td>{{ c.faction }}</td>
             <td>{{ c.initiative() + c.tempInitiative }} = {{ c.initiative() }} + <input v-model.number="c.tempInitiative" type="number" /></td>
-            <td>{{ showHP([c.currentHP, c.tempHP]) }}/{{ c.maxHP() }}</td>
-            <td>{{ c.currentPP }}/{{ c.maxPP() }}</td>
+            <td>{{ canRoleSeeCreatureVitals(session.role.value, c) ? `${showHP([c.currentHP, c.tempHP])}/${c.maxHP()}` : '?' }}</td>
+            <td>{{ canRoleSeeCreatureVitals(session.role.value, c) ? `${c.currentPP}/${c.maxPP()}` : '?' }}</td>
             <td>{{ c.inRound ? '是' : '' }}</td>
             <td><button class="mini-btn" @click.stop="toggleDisabled(c.code())">{{ disabledCodeSet.has(c.code()) ? '禁用' : '参与' }}</button></td>
           </tr>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import OBR from '@owlbear-rodeo/sdk'
 import TabBattle from './components/TabBattle.vue'
 import TabAoe from './components/TabAoe.vue'
@@ -10,7 +10,7 @@ import TabInitiative from './components/TabInitiative.vue'
 import RequestInbox from './components/RequestInbox.vue'
 import CharacterImport from './components/CharacterImport.vue'
 import SaveLoadControls from './components/SaveLoadControls.vue'
-import { useCreatureStore } from './stores/creatureStore'
+import { canRoleSeeCreature, useCreatureStore } from './stores/creatureStore'
 import { useObrSessionStore } from './stores/obrSessionStore'
 import { useRequestStore } from './stores/requestStore'
 import { useRuntimeSyncStore } from './stores/runtimeSyncStore'
@@ -21,6 +21,7 @@ const session = useObrSessionStore()
 const requestStore = useRequestStore()
 const runtimeSync = useRuntimeSyncStore()
 const sessionRole = session.role
+const visibleCreatures = computed(() => creatures.value.filter((creature) => canRoleSeeCreature(sessionRole.value, creature)))
 const pendingRequestCount = requestStore.pendingCount
 const remoteRuntimeCount = runtimeSync.remoteCount
 const canPushRuntime = runtimeSync.canPush
@@ -75,7 +76,7 @@ function handleOpenTab(event: Event): void {
     <!-- 顶部工具栏 -->
     <header class="toolbar">
       <span class="toolbar-title">PMDnD 计算器</span>
-      <span class="toolbar-count">角色：{{ creatures.length }} 人</span>
+      <span class="toolbar-count">角色：{{ visibleCreatures.length }} 人</span>
       <span class="toolbar-count">{{ sessionRole }}</span>
       <span v-if="remoteRuntimeCount > 0" class="toolbar-count">同步：{{ remoteRuntimeCount }} 角色</span>
       <span v-if="runtimeSyncError" class="toolbar-sync error">{{ runtimeSyncError }}</span>

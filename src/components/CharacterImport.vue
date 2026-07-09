@@ -38,7 +38,7 @@ function handleFileChange(event: Event): void {
       const workbook = xlsx.read(data, { type: 'array' })
       const creature = readCardFromXlsx(workbook)
       addCreature(creature)
-      successMsg.value = `✅ 成功导入「${creature.name()}」（${creature.code()}）`
+      successMsg.value = `✅ 成功导入「${creature.name()}」（${creature.code()}，${creature.isEnemyCard() ? '敌怪卡' : 'PC卡'}）`
       clearMessageLater()
     } catch (err) {
       errorMsg.value = `❌ 导入失败：${String(err)}`

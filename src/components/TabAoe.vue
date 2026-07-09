@@ -25,7 +25,7 @@ import {
   moveUseCharge,
 } from '../stores/battleStore'
 import { checkMemory } from '../stores/checkStore'
-import { useCreatureStore } from '../stores/creatureStore'
+import { canRoleSeeCreature, canRoleSeeCreatureFull, canRoleSeeCreatureVitals, useCreatureStore } from '../stores/creatureStore'
 import { useObrSessionStore } from '../stores/obrSessionStore'
 import { useRequestStore } from '../stores/requestStore'
 import type { MoveApplication } from '../stores/requestStore'
@@ -91,6 +91,7 @@ const showMoveDescription = ref(false)
 const saveAbilities = ['力量', '敏捷', '体质', '智力', '感知', '魅力']
 
 const attackerMoves = computed(() => memory.value.attacker?.getMoveList() ?? [])
+const visibleCreatures = computed(() => creatures.value.filter((creature) => canRoleSeeCreature(session.role.value, creature)))
 const hasMultiplePowers = computed(() => currentMove().powerList.length > 1)
 const selectedTargets = computed(() =>
   targets.value
@@ -123,6 +124,9 @@ const activeResults = computed(() => {
   return []
 })
 const canApplyDirectly = computed(() => !session.isPlayer.value)
+const hasPrivateTargets = computed(() =>
+  selectedTargets.value.some((creature) => !canRoleSeeCreatureFull(session.role.value, creature))
+)
 
 function notNull<T>(value: T | null): value is T {
   return value != null
@@ -148,7 +152,7 @@ function chooseCaster(code: string): void {
 }
 
 function ensureDefender(): void {
-  const first = selectedTargets.value[0] ?? creatures.value.find((creature) => creature !== memory.value.attacker)
+  const first = selectedTargets.value[0] ?? visibleCreatures.value.find((creature) => creature !== memory.value.attacker)
   memory.value.defender = first ?? null
 }
 
@@ -512,7 +516,7 @@ watch(
           @change="chooseCaster(($event.target as HTMLSelectElement).value)"
         >
           <option value="">未选择</option>
-          <option v-for="creature in creatures" :key="creature.code()" :value="creature.code()">
+          <option v-for="creature in visibleCreatures" :key="creature.code()" :value="creature.code()">
             {{ creature.name() }} {{ creature.code() }}
           </option>
         </select>
@@ -568,19 +572,24 @@ watch(
           <div class="section-title">目标</div>
           <div class="target-grid">
             <button
-              v-for="creature in creatures"
+              v-for="creature in visibleCreatures"
               :key="creature.code()"
               class="target-btn"
               :class="{ active: targets.some((target) => target.code === creature.code()) }"
               @click="toggleTarget(creature.code())"
             >
               <span>{{ creature.name() }}</span>
-              <small>{{ creature.code() }} · HP {{ showHP(creature.hpSet()) }}/{{ creature.maxHP() }}</small>
+              <small v-if="canRoleSeeCreatureVitals(session.role.value, creature)">{{ creature.code() }} · HP {{ showHP(creature.hpSet()) }}/{{ creature.maxHP() }}</small>
+              <small v-else>{{ creature.code() }} · HP ?</small>
             </button>
           </div>
         </section>
 
-        <section class="section">
+        <section v-if="hasPrivateTargets" class="section private-target">
+          已选目标中包含未完全公开的卡。PL 端只保留目标选择，完整防御、抗性和结算需要交给 DM 处理。
+        </section>
+
+        <section v-else class="section">
           <div class="section-title">批量设置</div>
           <div class="field">
             <span>{{ currentSpellName }}</span>
@@ -603,7 +612,7 @@ watch(
           </div>
         </section>
 
-        <section class="section">
+        <section v-if="!hasPrivateTargets" class="section">
           <div class="section-title">结果</div>
           <div v-if="targets.length == 0" class="empty">选择一个或多个目标后会在这里显示逐目标结果。</div>
           <table v-else class="result-table">
@@ -645,7 +654,7 @@ watch(
           </table>
         </section>
 
-        <section class="section">
+        <section v-if="!hasPrivateTargets" class="section">
           <div class="field">
             <button class="bar-btn" @click="copyLog">复制</button>
             <button class="bar-btn" :disabled="targets.length == 0" @click="submitAoeRequest">提交给 DM</button>
@@ -693,6 +702,14 @@ watch(
 
 .section {
   margin-bottom: 12px;
+}
+
+.private-target {
+  color: #666;
+  border: 1px dashed #bbb;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fcfcfc;
 }
 
 .section-title {

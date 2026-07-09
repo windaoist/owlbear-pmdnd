@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useCreatureStore } from '../stores/creatureStore'
+import { canRoleSeeCreature, canRoleSeeCreatureFull, canRoleSeeCreatureVitals } from '../stores/creatureStore'
+import { useObrSessionStore } from '../stores/obrSessionStore'
 import { Creature } from '../model/Creature'
 import { damageCalcRaw, handleHP, showHP } from '../model/Damage'
 import { S_Null, StatusList } from '../model/Status'
@@ -9,6 +11,7 @@ import type { MovePower } from '../model/DataType'
 import { toMod, valueToColor, valueToColorBinary } from '../utils'
 
 const { creatures } = useCreatureStore()
+const session = useObrSessionStore()
 
 const selectedCode = ref('')
 const pageNumber = ref(1)
@@ -17,8 +20,10 @@ newStatus.value.lossOnTurn = 1
 
 const curCreature = computed<Creature | null>(() => {
   if (!selectedCode.value) return null
-  return creatures.value.find((c) => c.code() === selectedCode.value) ?? null
+  return visibleCreatures.value.find((c) => c.code() === selectedCode.value) ?? null
 })
+const visibleCreatures = computed(() => creatures.value.filter((creature) => canRoleSeeCreature(session.role.value, creature)))
+const canSeeCurrentFull = computed(() => curCreature.value == null || canRoleSeeCreatureFull(session.role.value, curCreature.value))
 
 function selectCreature(code: string): void {
   selectedCode.value = code
@@ -122,7 +127,7 @@ function convertToParentStatus(s: Status): void {
       <label class="toolbar-label">角色</label>
       <select class="creature-sel" :value="selectedCode" @change="selectCreature(($event.target as HTMLSelectElement).value)">
         <option value="">（选择角色）</option>
-        <option v-for="c in creatures" :key="c.code()" :value="c.code()">{{ c.name() }} {{ c.code() }}</option>
+        <option v-for="c in visibleCreatures" :key="c.code()" :value="c.code()">{{ c.name() }} {{ c.code() }}</option>
       </select>
 
       <div class="page-tabs">
@@ -135,7 +140,15 @@ function convertToParentStatus(s: Status): void {
       </div>
     </div>
 
-    <div v-if="curCreature" class="status-body">
+    <div v-if="curCreature && !canSeeCurrentFull" class="status-body limited-status">
+      <h3>{{ curCreature.name() }} <small>{{ curCreature.code() }}</small></h3>
+      <p v-if="canRoleSeeCreatureVitals(session.role.value, curCreature)">
+        HP {{ showHP([curCreature.currentHP, curCreature.tempHP]) }}/{{ curCreature.maxHP() }} · PP {{ curCreature.currentPP }}/{{ curCreature.maxPP() }}
+      </p>
+      <p v-else>此卡当前仅名称可见。</p>
+    </div>
+
+    <div v-else-if="curCreature" class="status-body">
       <!-- 回合操作 -->
       <div class="round-row">
         <span class="round-badge" :class="{ active: curCreature.inRound }">
@@ -330,6 +343,7 @@ function convertToParentStatus(s: Status): void {
 .page-btn + .page-btn { border-left: 1px solid #ddd; }
 
 .status-body { font-size: 13px; }
+.limited-status { border: 1px dashed #bbb; border-radius: 6px; padding: 10px; background: #fcfcfc; }
 
 .round-row {
   display: flex;

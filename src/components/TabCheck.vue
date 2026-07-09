@@ -3,12 +3,14 @@ import { computed, nextTick, ref } from 'vue'
 import VueNumberInput from '@chenfengyuan/vue-number-input'
 import { skillCheckListDisplay, skillToModIndex } from '../model/DataType'
 import type { Creature } from '../model/Creature'
-import { useCreatureStore } from '../stores/creatureStore'
+import { canRoleSeeCreature, canRoleSeeCreatureFull, useCreatureStore } from '../stores/creatureStore'
+import { useObrSessionStore } from '../stores/obrSessionStore'
 import { checkMemory, type RollMode } from '../stores/checkStore'
 import { useRequestStore } from '../stores/requestStore'
 import { d10, d20, dvalue, toMod } from '../utils'
 
 const { creatures } = useCreatureStore()
+const session = useObrSessionStore()
 const requestStore = useRequestStore()
 const memory = checkMemory
 const DM_CODE = 'DM'
@@ -16,6 +18,8 @@ const abilityNames = ['力量', '敏捷', '体质', '智力', '感知', '魅力'
 const lastRollText = ref('')
 
 const selectedCodes = computed(() => Array.from(memory.value.chosen))
+const visibleCreatures = computed(() => creatures.value.filter((creature) => canRoleSeeCreature(session.role.value, creature)))
+const checkCreatures = computed(() => visibleCreatures.value.filter((creature) => canRoleSeeCreatureFull(session.role.value, creature)))
 const selectedSummary = computed(() =>
   selectedCodes.value.length === 0 ? '无' : selectedCodes.value.map(actorLabel).join('、')
 )
@@ -23,7 +27,7 @@ const checkActionLabel = computed(() => (memory.value.rollMode === 'save' ? '豁
 const defaultAbilityLabel = computed(() => defaultAbilityName(memory.value.checkSkill))
 
 function creatureByCode(code: string): Creature | undefined {
-  return creatures.value.find((c) => c.code() === code)
+  return checkCreatures.value.find((c) => c.code() === code)
 }
 
 function actorLabel(code: string): string {
@@ -53,7 +57,7 @@ function toggleSelectedCode(code: string): void {
 function selectFactions(factions: string[]): void {
   memory.value.chosen.clear()
   memory.value.chooseMode = 0
-  for (const c of creatures.value) if (factions.includes(c.faction)) memory.value.chosen.add(c.code())
+  for (const c of checkCreatures.value) if (factions.includes(c.faction)) memory.value.chosen.add(c.code())
 }
 
 function appendLog(text: string): void {
@@ -237,8 +241,8 @@ async function startCheck(): Promise<void> {
 }
 
 function makeInitiative(): void {
-  for (const c of creatures.value) c.tempInitiative = d10()
-  for (const c of creatures.value) appendLog(`${c.name()} (${c.code()}) 的先攻：${c.initiative()} + ${c.tempInitiative} = ${c.initiative() + c.tempInitiative}`)
+  for (const c of checkCreatures.value) c.tempInitiative = d10()
+  for (const c of checkCreatures.value) appendLog(`${c.name()} (${c.code()}) 的先攻：${c.initiative()} + ${c.tempInitiative} = ${c.initiative() + c.tempInitiative}`)
 }
 
 function copyLog(): void {
@@ -266,7 +270,7 @@ async function submitLastRoll(): Promise<void> {
   <div class="check-tab">
     <aside class="check-sidebar">
       <button class="actor-row" :class="{ selected: memory.chosen.has(DM_CODE) }" @click="toggleSelectedCode(DM_CODE)">DM（暗骰）</button>
-      <button v-for="c in creatures" :key="c.code()" class="actor-row" :class="{ selected: memory.chosen.has(c.code()) }" @click="toggleSelectedCode(c.code())">
+      <button v-for="c in checkCreatures" :key="c.code()" class="actor-row" :class="{ selected: memory.chosen.has(c.code()) }" @click="toggleSelectedCode(c.code())">
         <b>{{ c.name() }}</b><small>{{ c.code() }} · {{ c.faction }}</small>
       </button>
     </aside>

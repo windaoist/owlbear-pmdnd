@@ -7,6 +7,7 @@ import { S_Null, getStatus } from '../model/Status'
 import { StatusManager } from '../model/StatusManager'
 import type { Status } from '../model/DataType'
 import { InitiativeMemory, initiativeMemory } from './initiativeStore'
+import { reviveCreature } from './persistenceStore'
 
 const RUNTIME_METADATA_KEY = 'owl-pm/runtime'
 const RUNTIME_CHANNEL = 'owl-pm/runtime'
@@ -38,6 +39,7 @@ interface InitiativeRuntimeState {
 interface RuntimePayload {
   states: RuntimeStateMap
   initiative: InitiativeRuntimeState
+  creatures?: unknown[]
 }
 
 interface CompactStatus {
@@ -49,6 +51,7 @@ interface CompactStatus {
 
 const remoteStates = ref<RuntimeStateMap>({})
 const remoteInitiative = ref<InitiativeRuntimeState | null>(null)
+const remoteCreatureCards = ref<Creature[]>([])
 const syncEnabled = ref(true)
 const lastSyncAt = ref(0)
 const lastAppliedAt = ref(0)
@@ -75,15 +78,15 @@ export function useRuntimeSyncStore() {
     if (!OBR.isAvailable) return
     const metadata = await OBR.room.getMetadata()
     applyMetadata(metadata)
-    if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
+    if (session.role.value === 'PLAYER') applyRemoteCardsAndStatesToCreatures()
 
     unsubscribeMetadata = OBR.room.onMetadataChange((metadata) => {
       applyMetadata(metadata)
-      if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
+      if (session.role.value === 'PLAYER') applyRemoteCardsAndStatesToCreatures()
     })
     unsubscribeRuntime = OBR.broadcast.onMessage(RUNTIME_CHANNEL, (event) => {
       if (!applyRuntimePayload(event.data)) return
-      if (session.role.value === 'PLAYER') applyRemoteStatesToCreatures()
+      if (session.role.value === 'PLAYER') applyRemoteCardsAndStatesToCreatures()
     })
     //如果你是GM，监听本地角色变化并推送到远端
     if (session.role.value === 'GM') {
@@ -101,7 +104,7 @@ export function useRuntimeSyncStore() {
         () => creatures.value.map((creature) => creature.code()).join('|'),
         () => {
           if (!syncEnabled.value) return
-          applyRemoteStatesToCreatures()
+          applyRemoteCardsAndStatesToCreatures()
         },
       )
     }
@@ -125,13 +128,14 @@ export function useRuntimeSyncStore() {
   }
 
   function applyNow(): void {
-    applyRemoteStatesToCreatures()
+    applyRemoteCardsAndStatesToCreatures()
   }
 
   return {
     syncEnabled,
     remoteStates,
     remoteInitiative,
+    remoteCreatureCards,
     lastSyncAt,
     lastAppliedAt,
     lastError,
@@ -162,9 +166,11 @@ async function writeRuntimeStates(): Promise<void> {
     const { creatures } = useCreatureStore()
     const next = createRuntimeStateMap(creatures.value)
     const initiative = createInitiativeRuntimeState()
+    const creatureCards = createCreatureCardSnapshots(creatures.value)
     remoteStates.value = next
     remoteInitiative.value = initiative
-    const plain = toPlain({ states: next, initiative } satisfies RuntimePayload)
+    remoteCreatureCards.value = creatureCards.map((card) => reviveCreature(card))
+    const plain = toPlain({ states: next, initiative, creatures: creatureCards } satisfies RuntimePayload)
     //广播消息
     await OBR.broadcast.sendMessage(RUNTIME_CHANNEL, plain, { destination: 'REMOTE' })
     let metadataError = ''
@@ -222,6 +228,10 @@ function createInitiativeRuntimeState(): InitiativeRuntimeState {
   return createInitiativeRuntimeStateFrom(initiativeMemory.value)
 }
 
+function createCreatureCardSnapshots(creatures: Creature[]): unknown[] {
+  return JSON.parse(JSON.stringify(creatures)) as unknown[]
+}
+
 function createInitiativeRuntimeStateFrom(memory: InitiativeMemory): InitiativeRuntimeState {
   return {
     initMode: memory.initMode,
@@ -259,6 +269,29 @@ function applyRemoteStatesToCreatures(): void {
     lastError.value = error instanceof Error ? error.message : String(error)
   } finally {
     applyingRemote = false
+  }
+}
+
+function applyRemoteCardsAndStatesToCreatures(): void {
+  applyRemoteCreatureCards()
+  applyRemoteStatesToCreatures()
+}
+
+function applyRemoteCreatureCards(): void {
+  const { creatures } = useCreatureStore()
+  if (remoteCreatureCards.value.length === 0) return
+  const localByCode = new Map(creatures.value.map((creature) => [creature.code(), creature]))
+  for (const remote of remoteCreatureCards.value) {
+    const code = remote.code()
+    if (!code) continue
+    const snapshot = JSON.parse(JSON.stringify(remote))
+    const existing = localByCode.get(code)
+    if (existing) {
+      Object.assign(existing, snapshot)
+      reviveCreature(existing)
+    } else {
+      creatures.value.push(reviveCreature(snapshot))
+    }
   }
 }
 
@@ -309,7 +342,21 @@ function applyRuntimePayload(raw: unknown): boolean {
   }
   remoteStates.value = next
   remoteInitiative.value = normalizeInitiativeRuntimeState(rawRecord.initiative)
+  remoteCreatureCards.value = normalizeRemoteCreatureCards(rawRecord.creatures)
   return true
+}
+
+function normalizeRemoteCreatureCards(value: unknown): Creature[] {
+  if (!Array.isArray(value)) return []
+  const result: Creature[] = []
+  for (const raw of value) {
+    try {
+      result.push(reviveCreature(raw))
+    } catch {
+      // 忽略单张坏卡，避免一次同步破坏整个运行时快照。
+    }
+  }
+  return result
 }
 
 function normalizeRuntimeState(value: unknown): CreatureRuntimeState | null {
@@ -321,7 +368,10 @@ function normalizeRuntimeState(value: unknown): CreatureRuntimeState | null {
 }
 
 function runtimeSignature(creatures: Creature[]): string {
-  return JSON.stringify(createRuntimeStateMap(creatures))
+  return JSON.stringify({
+    states: createRuntimeStateMap(creatures),
+    creatures: createCreatureCardSnapshots(creatures),
+  })
 }
 
 function initiativeSignature(memory: InitiativeMemory): string {

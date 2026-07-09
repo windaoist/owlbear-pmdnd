@@ -20,6 +20,18 @@ import { ResistManager, StatusManager } from './StatusManager'
 import { S_Null } from './Status'
 import { toMod } from '../utils'
 
+export type CreaturePublicVisibility = 'hidden' | 'name' | 'vitals' | 'full'
+
+export const creaturePublicVisibilityOptions: Array<{
+  value: CreaturePublicVisibility
+  label: string
+}> = [
+  { value: 'hidden', label: '对PL不可见' },
+  { value: 'name', label: '仅名称可见' },
+  { value: 'vitals', label: '名称、HP和PP可见' },
+  { value: 'full', label: '完全可见' },
+]
+
 export class Creature {
   profile: Profile
   races: Race[]
@@ -59,6 +71,7 @@ export class Creature {
   legendaryModifier: number
   difficultyModifier: number
   faction: string
+  publicVisibility: CreaturePublicVisibility
   action: number
   bonusAction: number
   reaction: number
@@ -187,6 +200,7 @@ export class Creature {
     this.legendaryModifier = legendaryModifier
     this.difficultyModifier = difficultyModifier
     this.faction = faction
+    this.publicVisibility = this.defaultPublicVisibility()
 
     this.action = action
     this.bonusAction = bonusAction
@@ -248,6 +262,9 @@ export class Creature {
 
     if (!this.faction || !['玩家', '友方', '中立', '敌方'].includes(this.faction)) {
       this.faction = '敌方'
+    }
+    if (!['hidden', 'name', 'vitals', 'full'].includes(this.publicVisibility)) {
+      this.publicVisibility = this.defaultPublicVisibility()
     }
 
     this.restHPCoef = Number(this.restHPCoef) || 0
@@ -770,6 +787,14 @@ export class Creature {
 
   code(): string {
     return this.profile.code
+  }
+
+  isEnemyCard(): boolean {
+    return this.difficultyModifier !== 1.25
+  }
+
+  defaultPublicVisibility(): CreaturePublicVisibility {
+    return this.isEnemyCard() ? 'hidden' : 'full'
   }
 
   skillModRaw(skill: string): number {
