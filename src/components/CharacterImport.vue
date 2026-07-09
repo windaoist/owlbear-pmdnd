@@ -5,6 +5,13 @@ import { readCardFromXlsx } from '../model/CardReader'
 import { useCreatureStore } from '../stores/creatureStore'
 
 const { addCreature } = useCreatureStore()
+const props = withDefaults(defineProps<{
+  variant?: 'toolbar' | 'panel'
+  label?: string
+}>(), {
+  variant: 'toolbar',
+  label: '导入角色卡 (.xlsx)',
+})
 
 const importing = ref(false)
 const errorMsg = ref('')
@@ -79,8 +86,8 @@ onBeforeUnmount(() => {
       @change="handleFileChange"
     />
 
-    <button class="import-btn" :disabled="importing" @click="triggerFileInput">
-      {{ importing ? '⏳ 导入中...' : '📂 导入角色卡 (.xlsx)' }}
+    <button class="import-btn" :class="props.variant" :disabled="importing" @click="triggerFileInput">
+      {{ importing ? '导入中...' : props.label }}
     </button>
 
     <div v-if="successMsg" class="msg success">{{ successMsg }}</div>
@@ -105,8 +112,20 @@ onBeforeUnmount(() => {
   transition: background 0.15s;
 }
 
+.import-btn.panel {
+  border-color: #bbb;
+  background: #fff;
+  color: #222;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
 .import-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.28);
+}
+
+.import-btn.panel:hover:not(:disabled) {
+  background: #f0f4ff;
 }
 
 .import-btn:disabled {
@@ -124,6 +143,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   z-index: 100;
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.panel ~ .msg {
+  left: 0;
+  right: auto;
+  white-space: normal;
+  min-width: min(260px, 80vw);
 }
 
 .success {

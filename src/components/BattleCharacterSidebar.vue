@@ -122,4 +122,37 @@ function hpPercent(currentHP: number, maxHP: number): number {
 .hidden-vitals {
   color: #777;
 }
+
+@media (max-width: 620px) {
+  .sidebar {
+    width: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    font-size: 12px;
+  }
+
+  .sidebar-row {
+    flex: 0 0 8.5em;
+    border-right: 1px solid #eee;
+  }
+
+  .sidebar-row-inner {
+    display: grid;
+    gap: 1px;
+    padding: 5px 7px;
+    min-height: 44px;
+  }
+
+  .sidebar-name,
+  .sidebar-vitals {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 </style>

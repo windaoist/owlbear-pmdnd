@@ -322,7 +322,7 @@ function resetAdjustments(c: Creature): void {
 
       <section v-if="!currentCanSeeFull" class="detail-section limited-card">
         <h3>PL 可见信息</h3>
-        <p>此卡当前不是完全公开。PL 端只会看到 DM 允许公开的部分，但本地仍保存完整 JSON，方便之后切换可见性。</p>
+        <p>你对这个角色不甚了解……</p>
         <div class="chip-row">
           <span>{{ current.name() }}</span>
           <span>{{ current.code() }}</span>

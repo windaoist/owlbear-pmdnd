@@ -5,6 +5,11 @@ import {
   importSaveJson,
 } from '../stores/persistenceStore'
 
+const props = withDefaults(defineProps<{
+  variant?: 'toolbar' | 'panel'
+}>(), {
+  variant: 'toolbar',
+})
 const fileInput = ref<HTMLInputElement | null>(null)
 const message = ref('')
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -53,8 +58,8 @@ function importFile(event: Event): void {
 
 <template>
   <div class="save-load">
-    <button class="save-btn" @click="downloadJson">导出</button>
-    <button class="save-btn" @click="triggerImport">导入</button>
+    <button class="save-btn" :class="props.variant" @click="downloadJson">{{ props.variant === 'panel' ? '导出存档' : '导出' }}</button>
+    <button class="save-btn" :class="props.variant" @click="triggerImport">{{ props.variant === 'panel' ? '导入存档' : '导入' }}</button>
     <input ref="fileInput" type="file" accept="application/json,.json" class="hidden-input" @change="importFile" />
     <span v-if="message" class="save-message">{{ message }}</span>
   </div>
@@ -79,8 +84,20 @@ function importFile(event: Event): void {
   white-space: nowrap;
 }
 
+.save-btn.panel {
+  border-color: #bbb;
+  background: #fff;
+  color: #222;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
 .save-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.save-btn.panel:hover:not(:disabled) {
+  background: #f0f4ff;
 }
 
 .save-btn:disabled {

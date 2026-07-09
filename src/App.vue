@@ -7,6 +7,7 @@ import TabStatus from './components/TabStatus.vue'
 import TabCharacters from './components/TabCharacters.vue'
 import TabCheck from './components/TabCheck.vue'
 import TabInitiative from './components/TabInitiative.vue'
+import TabFiles from './components/TabFiles.vue'
 import RequestInbox from './components/RequestInbox.vue'
 import CharacterImport from './components/CharacterImport.vue'
 import SaveLoadControls from './components/SaveLoadControls.vue'
@@ -34,15 +35,17 @@ const githubUrl = manifest.homepage_url
 const activeTab = ref<string>('battle')
 const isReady = ref(false)
 
-const tabs = [
+const tabs = computed(() => [
   { key: 'battle', label: '⚔ 战斗' },
   { key: 'aoe', label: '☄ AOE' },
   { key: 'status', label: '📋 状态' },
   { key: 'characters', label: '👥 角色' },
   { key: 'check', label: '🎲 检定' },
   { key: 'initiative', label: '⏱ 先攻' },
-  { key: 'requests', label: '📨 请求' },
-]
+  sessionRole.value === 'LOCAL'
+    ? { key: 'files', label: '📁 文件' }
+    : { key: 'requests', label: '📨 请求' },
+])
 
 onMounted(async () => {
   window.addEventListener('owl-pm-open-tab', handleOpenTab)
@@ -67,7 +70,7 @@ onUnmounted(() => {
 
 function handleOpenTab(event: Event): void {
   const tab = (event as CustomEvent<string>).detail
-  if (tabs.some((item) => item.key === tab)) activeTab.value = tab
+  if (tabs.value.some((item) => item.key === tab)) activeTab.value = tab
 }
 </script>
 
@@ -98,14 +101,16 @@ function handleOpenTab(event: Event): void {
         应用同步
       </button>
       <button
-        v-if="pendingRequestCount > 0"
+        v-if="sessionRole !== 'LOCAL' && pendingRequestCount > 0"
         class="toolbar-request"
         @click="activeTab = 'requests'"
       >
         待处理 {{ pendingRequestCount }}
       </button>
-      <CharacterImport />
-      <SaveLoadControls />
+      <template v-if="sessionRole !== 'LOCAL'">
+        <CharacterImport />
+        <SaveLoadControls />
+      </template>
       <span class="toolbar-spacer" />
       <span class="toolbar-version">v{{ appVersion }}</span>
       <a class="github-link" :href="githubUrl" target="_blank" rel="noreferrer" title="GitHub">
@@ -139,6 +144,7 @@ function handleOpenTab(event: Event): void {
       <TabCharacters v-else-if="activeTab === 'characters'" />
       <TabCheck v-else-if="activeTab === 'check'" />
       <TabInitiative v-else-if="activeTab === 'initiative'" />
+      <TabFiles v-else-if="activeTab === 'files'" />
       <RequestInbox v-else-if="activeTab === 'requests'" />
     </div>
   </div>
@@ -177,6 +183,7 @@ html, body, #app {
   background: #4a6fa5;
   color: #fff;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .toolbar-title {
@@ -251,6 +258,7 @@ html, body, #app {
   flex-shrink: 0;
   background: #e0e0e0;
   border-bottom: 1px solid #ccc;
+  overflow-x: auto;
 }
 
 .tab-btn {
@@ -263,6 +271,7 @@ html, body, #app {
   font-weight: 500;
   color: #666;
   transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
 }
 
 .tab-btn:hover {
@@ -289,5 +298,44 @@ html, body, #app {
   height: 100%;
   color: #999;
   font-size: 16px;
+}
+
+@media (max-width: 620px) {
+  html, body, #app {
+    font-size: 13px;
+  }
+
+  .toolbar {
+    gap: 6px;
+    padding: 5px 8px;
+    flex-wrap: wrap;
+    align-content: center;
+  }
+
+  .toolbar-title {
+    flex: 1 1 auto;
+    min-width: 120px;
+  }
+
+  .toolbar-count,
+  .toolbar-version {
+    font-size: 11px;
+  }
+
+  .toolbar-sync {
+    order: 4;
+    flex: 1 0 100%;
+    max-width: none;
+  }
+
+  .toolbar-spacer {
+    display: none;
+  }
+
+  .tab-btn {
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
 }
 </style>

@@ -857,4 +857,26 @@ async function submitCurrentMove(actionLabel: string, text: string, moveName: st
   font-size: 12px;
   line-height: 1.45;
 }
+
+@media (max-width: 620px) {
+  .tab-battle {
+    flex-direction: column;
+  }
+
+  .battle-main {
+    flex: 1 1 auto;
+  }
+
+  .sticky-bar {
+    position: relative;
+  }
+
+  .move-line {
+    flex-wrap: wrap;
+  }
+
+  .power-info {
+    white-space: normal;
+  }
+}
 </style>
