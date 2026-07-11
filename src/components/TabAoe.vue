@@ -410,7 +410,7 @@ function diceLines(entry: TargetEntry, bonus: number, flags = baseMemory()): str
   const casterName = memory.value.attacker?.name() ?? '效果'
   return entry.rollHistory
     .map((raw) => {
-      const { roll, rollPct } = dicePct(raw, entry.dicerollD, bonus, flags.enableCT, flags.ctLimit, flags.enableMiss)
+      const { roll, rollPct } = dicePct(raw, entry.dicerollD*0, bonus, flags.enableCT, flags.ctLimit, flags.enableMiss)//应Z要求
       return `【骰子】(${casterName}：${currentSpellName.value})[${rollPct}%]D20${toMod(roll - raw)}=${roll}`
     })
     .join('\n')

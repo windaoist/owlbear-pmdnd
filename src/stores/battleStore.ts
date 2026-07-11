@@ -875,7 +875,7 @@ export function diceHistoryLines(
   for (const v of memory.rollHistory) {
     const { roll, rollPct } = dicePct(
       v,
-      memory.dicerollD,
+      memory.dicerollD*0,//应Z要求
       bonus,
       memory.enableCT,
       memory.ctLimit,
