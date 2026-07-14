@@ -416,7 +416,11 @@ export class Creature {
     if (index == 0) {
       // HP
       val *=
-        this.difficultyModifier * this.legendaryModifier * (1 + this.ability(2) * 0.05)
+        (this.difficultyModifier *
+          this.legendaryModifier *
+          4 *
+          (this.ability(2) / 2 + 5)) /
+        10
     } else if (index > 0 && index < 6) {
       val *= this.legendaryModifier * 2.5
     } else if (index == 6) {
@@ -479,12 +483,7 @@ export class Creature {
 
   save(index: number): number {
     // this.validate()
-    const proficiency = Math.floor((this.characterLv() * 2.5) / 10)
-    return (
-      this.modifier(index) +
-      this.abilitySave.get(index) * proficiency +
-      this.abilitySaveD.get(index)
-    )
+    return this.modifier(index) + this.abilitySave.get(index) + this.abilitySaveD.get(index)
   }
 
   speedFactor(): number {
